@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f4f8">
+  <title>TLSF 交互演示｜内存池、分配、合并与碎片</title>
+  <meta name="description" content="交互学习 TLSF 内存池初始化、FL/SL 位图分配、释放合并、内存碎片、realloc、memalign 与多池边界。">
+  <style>
+    :root{color-scheme:light;--paper:#f2f4f8;--panel:#fff;--ink:#182238;--muted:#69758a;--line:#dce2ec;--navy:#13233f;--blue:#496cf0;--blue-soft:#e9eeff;--mint:#1b9b79;--mint-soft:#e1f5ee;--amber:#dc8b26;--amber-soft:#fff1db;--coral:#dd695e;--shadow:0 18px 50px rgba(30,48,82,.08);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper)}button,input{font:inherit}button{cursor:pointer}a{color:inherit}.shell{width:min(1240px,calc(100% - 48px));margin:0 auto}
+    .topbar{height:68px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(220,226,236,.8)}.brand{display:inline-flex;align-items:center;gap:10px;color:var(--navy);font-size:13px;font-weight:850;letter-spacing:.12em;text-decoration:none}.brand-mark{display:grid;grid-template-columns:repeat(2,9px);gap:3px;transform:rotate(-8deg)}.brand-mark i{width:9px;height:9px;border-radius:3px;background:var(--blue)}.brand-mark i:nth-child(2){opacity:.55}.brand-mark i:nth-child(3){opacity:.7}.brand-mark i:nth-child(4){background:var(--mint)}.toplinks{display:flex;gap:26px;color:var(--muted);font-size:13px;font-weight:650}.toplinks a{text-decoration:none}.toplinks a:hover{color:var(--blue)}
+    .eyebrow{color:var(--blue);font-size:11px;font-weight:850;letter-spacing:.17em;text-transform:uppercase}.hero{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(310px,.88fr);align-items:center;gap:54px;padding:68px 0 62px}.hero-copy{position:relative;z-index:1}h1{max-width:720px;margin:14px 0 18px;color:var(--navy);font-size:clamp(36px,5vw,62px);line-height:1.08;letter-spacing:-.055em}.hero-copy p{max-width:640px;margin:0;color:#526078;font-size:16px;line-height:1.8}.hero-actions{display:flex;gap:11px;margin-top:28px}
+    .button{display:inline-flex;min-height:43px;align-items:center;justify-content:center;gap:8px;padding:0 16px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:13px;font-weight:750;text-decoration:none;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.button:hover{transform:translateY(-1px);box-shadow:0 7px 18px rgba(24,34,56,.1)}.button.primary{border-color:var(--blue);background:var(--blue);color:white}.button.primary:hover{background:#385be0}.button:disabled{cursor:not-allowed;opacity:.45;transform:none;box-shadow:none}
+    .hero-visual{position:relative;min-height:270px;padding:26px;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:radial-gradient(circle at 82% 17%,rgba(89,127,255,.25),transparent 32%),linear-gradient(145deg,#172847,#0c1730);box-shadow:0 28px 60px rgba(24,38,69,.2);color:white}.hero-visual:after{position:absolute;right:-55px;bottom:-95px;width:260px;height:260px;border:1px solid rgba(153,176,255,.2);border-radius:50%;content:"";box-shadow:0 0 0 24px rgba(153,176,255,.035),0 0 0 52px rgba(153,176,255,.03)}.visual-head{position:relative;z-index:1;display:flex;justify-content:space-between;color:#bdc9e4;font-size:11px;font-weight:750;letter-spacing:.12em}.live-dot{display:inline-flex;align-items:center;gap:7px;letter-spacing:.03em}.live-dot:before{width:7px;height:7px;border-radius:50%;background:#69dbb2;content:"";box-shadow:0 0 12px #69dbb2}.mini-map{position:relative;z-index:1;display:flex;gap:5px;height:74px;margin-top:37px}.mini-map span{display:grid;place-items:center;min-width:0;border:1px solid rgba(255,255,255,.19);border-radius:9px;color:white;font-size:10px;font-weight:800;animation:drift 3s ease-in-out infinite}.mini-map span:nth-child(1){flex:1.1;background:rgba(88,112,169,.42)}.mini-map span:nth-child(2){flex:.85;background:rgba(43,177,139,.5);animation-delay:.2s}.mini-map span:nth-child(3){flex:.7;background:rgba(88,112,169,.42);animation-delay:.4s}.mini-map span:nth-child(4){flex:1.35;background:rgba(43,177,139,.5);animation-delay:.6s}.mini-map span:nth-child(5){flex:.8;background:rgba(88,112,169,.42);animation-delay:.8s}@keyframes drift{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}.visual-route{position:relative;z-index:1;display:flex;align-items:center;gap:9px;margin-top:26px;color:#aebcda;font-size:11px}.route-bit{display:flex;gap:3px}.route-bit i{width:8px;height:8px;border-radius:2px;background:#4e73fa}.route-bit i:nth-child(2){opacity:.55}.route-bit i:nth-child(3){opacity:.28}.route-arrow{color:#6383fb;font-size:17px}
+    .hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding-bottom:38px}.stat-card{min-height:80px;padding:15px 17px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.72)}.stat-card b{display:block;color:var(--navy);font-size:16px;letter-spacing:-.02em}.stat-card span{display:block;margin-top:6px;color:var(--muted);font-size:11px}
+    .section-heading{display:flex;justify-content:space-between;align-items:end;gap:18px;margin:0 0 19px}h2{margin:8px 0 0;color:var(--navy);font-size:26px;letter-spacing:-.04em}.section-heading p{max-width:540px;margin:0;color:var(--muted);font-size:13px;line-height:1.7}.workbench{padding:30px;border:1px solid var(--line);border-radius:21px;background:var(--panel);box-shadow:var(--shadow)}
+    .bench-top{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-bottom:21px;border-bottom:1px solid var(--line)}.bench-kicker{color:var(--blue);font-size:10px;font-weight:850;letter-spacing:.15em}.bench-top h2{margin-top:6px;font-size:22px}.bench-top .button{min-height:37px;font-size:12px}.bench-layout{display:grid;grid-template-columns:278px minmax(0,1fr);gap:24px;padding-top:23px}
+    .controls{padding:19px;border:1px solid #e2e7f0;border-radius:16px;background:#f8f9fc}.control-title{margin:0 0 4px;font-size:14px;font-weight:850}.control-caption{margin:0 0 17px;color:var(--muted);font-size:11px;line-height:1.6}.input-label{display:flex;align-items:center;justify-content:space-between;margin:0 0 7px;color:#4e5b72;font-size:11px;font-weight:800}.size-input-wrap{display:flex;align-items:center;height:43px;padding:0 11px;border:1px solid #d7deea;border-radius:10px;background:white}.size-input-wrap:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px rgba(73,108,240,.11)}.size-input-wrap input{width:100%;border:0;outline:0;color:var(--navy);font-size:17px;font-weight:850}.size-input-wrap span{color:var(--muted);font-size:12px}.action-buttons{display:grid;grid-template-columns:1fr;gap:8px;margin-top:11px}.action-buttons .button{width:100%;min-height:40px}.action-buttons #releaseXButton{grid-column:1/-1}.divider{height:1px;margin:17px 0;background:var(--line)}.transport{display:grid;grid-template-columns:1fr 1fr;gap:8px}.transport .button{min-height:38px;padding:0 9px;font-size:11px}.speed-row{display:flex;align-items:center;justify-content:space-between;margin-top:12px;color:var(--muted);font-size:10px}.speed-row select{padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:white;color:var(--ink);font-size:10px}.demo-hint{margin-top:15px;padding:10px 11px;border-radius:10px;background:var(--blue-soft);color:#455b9f;font-size:10px;line-height:1.65}
+    .stage-box{min-height:135px;margin-top:15px;padding:13px;border:1px solid #e3e8f1;border-radius:12px;background:white}.stage-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.08em}.stage-box h3{margin:10px 0 6px;color:var(--navy);font-size:14px}.stage-box p{margin:0;color:#58657a;font-size:11px;line-height:1.65}.timeline{display:flex;gap:5px;margin-top:12px}.timeline i{flex:1;height:4px;border-radius:4px;background:#e7ebf2}.timeline i.past{background:var(--blue)}.timeline i.current{background:var(--mint);box-shadow:0 0 8px rgba(27,155,121,.4)}
+    .scene{min-width:0}.scene-topline{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.scene-label{color:#536179;font-size:11px;font-weight:850}.pool-meta{color:var(--muted);font-size:10px}.pool-frame{padding:20px 17px 16px;border:1px solid #dfe5ef;border-radius:15px;background:linear-gradient(180deg,#fbfcff,#f5f7fb)}.addr-labels{display:flex;justify-content:space-between;margin-bottom:7px;color:#909aae;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}.pool-track{display:flex;gap:4px;min-height:84px}.mem-block{position:relative;display:flex;min-width:0;flex-direction:column;justify-content:space-between;padding:10px 9px;overflow:hidden;border:1px solid transparent;border-radius:9px;transition:flex-grow .55s cubic-bezier(.2,.8,.2,1),background .3s,border-color .3s,transform .3s,opacity .3s}.mem-block .block-name{font-size:10px;font-weight:900;white-space:nowrap}.mem-block .block-size{font:10px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}.mem-block.used{border-color:#c8d2e7;background:#e6ebf5;color:#44516b}.mem-block.free{border-color:#a4decb;background:var(--mint-soft);color:#187b60}.mem-block.pending{border-color:#f0c578;background:var(--amber-soft);color:#a86716}.mem-block.detached{border-color:#f0c578;background:repeating-linear-gradient(135deg,#fff0d8 0 8px,#ffe7bd 8px 16px);color:#96601a}.mem-block.focus{z-index:1;transform:translateY(-4px);box-shadow:0 8px 18px rgba(73,108,240,.18);outline:2px solid var(--blue);outline-offset:1px}.mem-block.coalesce-focus{z-index:1;transform:translateY(-3px);outline:2px solid var(--amber);outline-offset:1px}.sentinel{display:grid;flex:0 0 42px;place-items:center;border:1px dashed #8e9bb2;border-radius:8px;background:#eef1f6;color:#76839a;font-size:9px;font-weight:850;writing-mode:vertical-rl}.pool-caption{display:flex;justify-content:space-between;gap:12px;margin-top:11px;color:#768197;font-size:9px}.legend{display:flex;flex-wrap:wrap;gap:13px;margin-top:14px;color:#68758a;font-size:10px}.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:9px;height:9px;border-radius:3px;background:#e6ebf5;border:1px solid #c8d2e7}.legend .free-dot{background:var(--mint-soft);border-color:#a4decb}.legend .step-dot{background:var(--amber-soft);border-color:#f0c578}
+    .scene-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:13px}.scene-stat{padding:10px 12px;border:1px solid #e6eaf1;border-radius:10px;background:white}.scene-stat b{display:block;color:var(--navy);font-size:15px}.scene-stat span{display:block;margin-top:3px;color:var(--muted);font-size:9px}.alloc-row{display:flex;align-items:center;gap:8px;min-height:39px;margin-top:13px}.alloc-row-label{flex:0 0 auto;color:#68758a;font-size:10px;font-weight:800}.alloc-pills{display:flex;flex-wrap:wrap;gap:6px}.alloc-pill{padding:6px 9px;border:1px solid #d7deea;border-radius:8px;background:white;color:#42506a;font-size:10px;font-weight:800}.alloc-pill:hover{border-color:var(--coral);background:#ffebe8;color:#a33d34}.alloc-empty{color:#98a1b1;font-size:10px}
+    .inspect-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(270px,.85fr);gap:13px;margin-top:14px}.subpanel{min-width:0;padding:15px;border:1px solid #e3e8f0;border-radius:13px;background:white}.subpanel-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.subpanel h3{margin:0;color:var(--navy);font-size:12px}.subpanel-head span{color:#8792a5;font-size:9px}.probe-result{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}.probe-cell{padding:9px;border-radius:9px;background:#f5f7fb}.probe-cell span{display:block;color:#78849a;font-size:9px}.probe-cell b{display:block;margin-top:4px;color:#233451;font:750 12px ui-monospace,SFMono-Regular,Menlo,monospace}.probe-cell.active{background:var(--blue-soft)}.probe-cell.active b{color:#3858d4}.probe-note{min-height:30px;margin:9px 0 0;color:#78849a;font-size:9px;line-height:1.6}.mapping-detail{margin:2px 0 0;padding:8px 9px;border-left:2px solid #cad4fa;background:#f6f7ff;color:#68758a;font-size:9px;line-height:1.65}.bitmap-wrap{margin-top:13px}.bitmap-row{display:grid;grid-template-columns:78px minmax(0,1fr);align-items:center;gap:7px;margin-top:7px}.bitmap-label{color:#66748b;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}.bits{display:grid;grid-template-columns:repeat(32,minmax(3px,1fr));gap:2px}.bit{height:9px;border-radius:2px;background:#edf0f5}.bit.on{background:#6e87ee}.bit.target{background:#ffb951;box-shadow:0 0 0 1px #da8b25}.bit.candidate{background:#2ab58d;box-shadow:0 0 0 1px #168565}.bit-legend{display:flex;flex-wrap:wrap;gap:10px;margin:11px 0 0 85px;color:#8792a4;font-size:8px}.bit-legend i{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:2px;background:#6e87ee}.bit-legend .target-key{background:#ffb951}.bit-legend .candidate-key{background:#2ab58d}.free-lists{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.free-bin{flex:1 1 128px;padding:8px;border:1px solid #e6eaf1;border-radius:8px;background:#fafbfe}.free-bin.focus{border-color:#f0bf71;background:#fff8eb;box-shadow:inset 0 0 0 1px rgba(220,139,38,.1)}.free-bin-head{color:#53617a;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}.free-bin-items{margin-top:5px;color:#218266;font-size:9px;line-height:1.5}
+    .mechanisms{padding:54px 0 58px}.mechanism-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-top:20px}.mechanism-card{min-height:174px;padding:20px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.72)}.mechanism-num{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;background:var(--blue-soft);color:var(--blue);font:850 11px ui-monospace,SFMono-Regular,Menlo,monospace}.mechanism-card:nth-child(2) .mechanism-num{background:var(--mint-soft);color:var(--mint)}.mechanism-card:nth-child(3) .mechanism-num{background:var(--amber-soft);color:var(--amber)}.mechanism-card h3{margin:13px 0 7px;color:var(--navy);font-size:14px}.mechanism-card p{margin:0;color:var(--muted);font-size:11px;line-height:1.75}.footer{display:flex;justify-content:space-between;gap:20px;padding:20px 0 28px;border-top:1px solid var(--line);color:#818b9d;font-size:10px;line-height:1.6}.footer a{text-decoration:none}.footer a:hover{color:var(--blue)}
+    .advantage-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:20px 0 14px}.advantage-card{padding:19px;border:1px solid var(--line);border-radius:15px;background:#fff;box-shadow:0 8px 24px rgba(24,43,78,.04)}.advantage-label{display:flex;align-items:center;gap:7px;color:#71809a;font:800 9px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.advantage-label i{width:8px;height:8px;border-radius:50%;background:var(--blue)}.advantage-card:nth-child(2) .advantage-label i{background:var(--mint)}.advantage-card:nth-child(3) .advantage-label i{background:var(--amber)}.advantage-card h3{margin:12px 0 7px;color:var(--navy);font-size:15px}.advantage-card p{margin:0;color:#65728a;font-size:10px;line-height:1.75}.adv-flow{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:13px;padding:9px;border:1px solid #e4e9f1;border-radius:9px;background:#f7f8fc;color:#405170;font:800 8px ui-monospace,SFMono-Regular,Menlo,monospace}.adv-flow span{padding:5px 6px;border-radius:5px;background:#fff}.adv-flow b{color:#98a4b8}.adv-source{margin-top:10px;color:#909bad;font:8px ui-monospace,SFMono-Regular,Menlo,monospace}.advantage-boundary{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0 25px}.advantage-note{padding:14px 16px;border-radius:11px;font-size:10px;line-height:1.75}.advantage-note b{display:block;margin-bottom:4px;font-size:11px}.advantage-note.fit{border:1px solid #cbe8dc;background:#effaf5;color:#416c5e}.advantage-note.cost{border:1px solid #f0dfbc;background:#fff9ed;color:#796341}.mechanism-subhead{margin:28px 0 0;color:#405170;font-size:13px}
+    @media(max-width:720px){.advantage-grid{grid-template-columns:1fr}.advantage-boundary{grid-template-columns:1fr}.adv-flow{justify-content:flex-start;flex-wrap:wrap}}
+
+    .learning-route{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 56px;padding:16px 19px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.7);color:#7b879a;font-size:10px}.learning-route span{display:flex;align-items:center;gap:7px}.learning-route b{color:#364660;font-size:11px}.learning-route i{color:#aab4c4;font-style:normal}
+    .chapter{margin:0 0 54px;scroll-margin-top:24px}.chapter#fragmentation{margin-top:96px}.setup-card{display:grid;grid-template-columns:240px minmax(0,1fr);gap:18px;padding:20px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:var(--shadow)}.setup-controls{padding:15px;border:1px solid #e4e9f1;border-radius:13px;background:#f8f9fc}.setup-mode{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:4px;border-radius:9px;background:#edf0f6}.mode-button{min-height:36px;padding:5px;border:0;border-radius:7px;background:transparent;color:#67748a;font-size:10px;font-weight:800}.mode-button.selected{background:white;color:#3858d4;box-shadow:0 2px 6px rgba(25,40,70,.1)}.range-label{display:flex;justify-content:space-between;gap:8px;margin:20px 0 7px;color:#59677d;font-size:10px;font-weight:750}.range-label b{color:var(--navy);font:800 11px ui-monospace,SFMono-Regular,Menlo,monospace}.range-input{width:100%;accent-color:var(--blue)}.range-ends{display:flex;justify-content:space-between;color:#8b96a9;font-size:9px}.setup-note{min-height:60px;margin:15px 0 0;color:#65728a;font-size:10px;line-height:1.7}.setup-visual{padding:17px;border-radius:14px;background:linear-gradient(145deg,#172847,#0c1730);color:white}.setup-visual-head{display:flex;justify-content:space-between;color:#bac7e1;font-size:9px;font-weight:800;letter-spacing:.12em}.fit-badge{color:#75dfb6;letter-spacing:0}.fit-badge.warn{color:#ffc56f}.pool-diagram{display:flex;flex-direction:column;gap:9px;min-height:120px;justify-content:center;margin-top:14px}.diagram-label{display:flex;justify-content:space-between;margin-bottom:5px;color:#aebbd5;font-size:9px}.diagram-track{display:flex;gap:3px;height:36px}.diagram-segment{display:flex;min-width:3px;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.2);border-radius:6px;font-size:9px;font-weight:800;white-space:nowrap;transition:flex-grow .4s ease,opacity .3s}.diagram-segment.control{background:rgba(103,129,191,.58);color:#eef3ff}.diagram-segment.used{background:rgba(103,129,191,.58);color:#eef3ff}.diagram-segment.free{background:rgba(39,176,136,.65);color:#effff9}.diagram-segment.overhead{flex:0 0 18px;background:rgba(255,184,81,.62);font-size:7px}.diagram-segment.unavailable{background:rgba(221,105,94,.55)}.diagram-segment.focus{outline:2px solid #ffd071;outline-offset:2px}.setup-numbers{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}.setup-number{padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.06)}.setup-number b{display:block;font-size:12px}.setup-number span{display:block;margin-top:3px;color:#aebbd5;font-size:8px}.init-walk{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 20px;align-items:center;padding:15px;border:1px solid #e4e9f1;border-radius:13px;background:#fbfcfe}.step-tag{color:var(--blue);font:800 9px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.init-copy h3{margin:6px 0;color:var(--navy);font-size:14px}.init-copy p{max-width:700px;margin:0;color:#65728a;font-size:10px;line-height:1.7}.init-controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.init-controls .button{min-height:34px;padding:0 10px;font-size:10px}.init-timeline{grid-column:1/-1;display:flex;gap:5px}.init-timeline i{flex:1;height:4px;border-radius:4px;background:#e5e9f0}.init-timeline i.past{background:var(--blue)}.init-timeline i.current{background:var(--mint)}.setup-foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:15px;color:#7b879a;font-size:9px;line-height:1.6}.setup-foot b{color:#4a5871}
+    .scene-stats{grid-template-columns:repeat(4,1fr)}.scenario-shortcuts{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px}.scenario-shortcuts .button{min-height:33px;padding:0 10px;font-size:10px}
+    .fragment-card{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:18px;padding:22px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow)}.fragment-explain h3{margin:0 0 9px;color:var(--navy);font-size:17px}.fragment-explain p{margin:0;color:#5e6b81;font-size:12px;line-height:1.8}.fragment-explain p+p{margin-top:10px}.fragment-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:15px}.fragment-actions .button{min-height:36px;padding:0 11px;font-size:10px}.fragment-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fragment-metric{padding:13px;border:1px solid #e4e9f1;border-radius:11px;background:#f8f9fc}.fragment-metric b{display:block;color:var(--navy);font-size:18px}.fragment-metric span{display:block;margin-top:4px;color:#7b879a;font-size:9px}.fragment-verdict{grid-column:1/-1;min-height:50px;padding:11px 13px;border-radius:10px;background:var(--amber-soft);color:#885615;font-size:10px;line-height:1.65}.fragment-verdict.ok{background:var(--mint-soft);color:#176f57}.fragment-formula{margin-top:12px;padding:12px;border-left:3px solid var(--blue);background:#f5f7ff;color:#506080;font:10px ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.8}
+    .fragment-link-note{display:flex;align-items:flex-start;gap:10px;margin:-2px 0 14px;padding:12px 14px;border:1px solid #dce4fb;border-radius:11px;background:#f1f4ff;color:#53627d;font-size:11px;line-height:1.65}.fragment-link-note b{flex:0 0 auto;color:#3554cd}.fragment-link-note a{color:#3554cd;font-weight:800}.fragment-scene{margin-top:13px;padding:13px;border:1px solid #e2e7f0;border-radius:12px;background:#f8f9fc}.fragment-scene-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px;color:#637089;font-size:9px}.fragment-scene-head b{color:#2e3e5a;font-size:10px}.fragment-track{display:flex;align-items:stretch;gap:3px;min-height:68px}.fragment-track .mem-block{flex-basis:0;min-height:68px;padding:8px 5px}.fragment-track .mem-block .block-name,.fragment-track .mem-block .block-size{font-size:9px}.fragment-track .sentinel{flex:0 0 30px;font-size:8px}.fragment-legend{display:flex;flex-wrap:wrap;gap:8px 13px;margin-top:8px;color:#68758a;font-size:9px}.fragment-legend span{display:inline-flex;align-items:center;gap:5px}.fragment-swatch{width:11px;height:11px;flex:0 0 11px;border:1px solid;border-radius:3px}.fragment-swatch.used{border-color:#c8d2e7;background:#e6ebf5}.fragment-swatch.free{border-color:#a4decb;background:var(--mint-soft)}.fragment-swatch.focus{border:2px solid var(--blue);background:#fff}.fragment-swatch.sentinel{border:1px dashed #8e9bb2;background:#eef1f6}.fragment-scene-caption{display:flex;gap:10px;margin-top:7px;color:#78849a;font-size:9px;line-height:1.55}.fragment-actions-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin:15px 0 7px;color:#35445f;font-size:10px}.fragment-actions-head span{color:#78849a;font-size:9px}.fragment-actions{margin-top:0}.fragment-actions .button:disabled{opacity:.45}
+    .align-options{display:flex;flex-wrap:wrap;gap:10px;margin:-5px 0 14px;padding:10px 12px;border:1px solid #e3e8f0;border-radius:9px;background:#f8f9fc}.align-options[hidden]{display:none}.align-options label{display:flex;align-items:center;gap:7px;color:#65728a;font-size:9px;font-weight:750}.align-options select,.align-options input{max-width:92px;padding:6px;border:1px solid #d9e0eb;border-radius:6px;background:#fff;color:#253550;font-size:10px}.api-panel{padding:22px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow)}.api-tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:17px}.api-tab{padding:9px 12px;border:1px solid #e0e6ef;border-radius:9px;background:#fafbfe;color:#5a6880;font-size:10px;font-weight:800}.api-tab.active{border-color:#bdc9ff;background:var(--blue-soft);color:#3554cd}.api-grid{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:17px}.api-visual{padding:17px;border:1px solid #e1e7f0;border-radius:13px;background:linear-gradient(180deg,#fbfcff,#f3f6fb)}.api-track{display:flex;align-items:stretch;gap:4px;min-height:84px}.api-block{display:flex;min-width:0;flex-direction:column;justify-content:space-between;padding:10px 8px;overflow:hidden;border:1px solid #cbd4e4;border-radius:8px;background:#e8edf6;color:#48566e;transition:flex-grow .45s ease,background .25s}.api-block.free{border-color:#a4decb;background:var(--mint-soft);color:#187b60}.api-block.focus{border-color:#8e9fff;background:#e9eeff;color:#3d58ca;box-shadow:0 0 0 2px rgba(73,108,240,.12)}.api-block.pending{border-color:#f0c578;background:var(--amber-soft);color:#a86716}.api-block .block-name{font-size:10px;font-weight:900;white-space:nowrap}.api-block .block-size{font:9px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}.api-stage{min-height:138px;padding:15px;border:1px solid #e4e9f1;border-radius:13px;background:#fff}.api-stage .stage-tag{color:var(--blue);font:800 9px ui-monospace,SFMono-Regular,Menlo,monospace}.api-stage h3{margin:8px 0 6px;color:var(--navy);font-size:15px}.api-stage p{margin:0;color:#5d6a80;font-size:11px;line-height:1.75}.api-transport{display:flex;gap:7px;margin-top:11px}.api-transport .button{min-height:35px;padding:0 10px;font-size:10px}.api-caption{margin-top:12px;color:#7c879b;font-size:9px;line-height:1.65}.api-footnotes{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:15px}.api-footnote{padding:12px;border-radius:10px;background:#f7f8fb;color:#67748a;font-size:9px;line-height:1.7}.api-footnote b{display:block;margin-bottom:4px;color:#364660;font-size:10px}
+    .boundary-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.boundary-card{padding:20px;border:1px solid var(--line);border-radius:16px;background:#fff}.boundary-card h3{margin:0 0 7px;color:var(--navy);font-size:15px}.boundary-card>p{margin:0 0 13px;color:#647188;font-size:10px;line-height:1.7}.multi-pools{display:grid;gap:8px}.mini-pool{padding:10px;border:1px solid #e0e6ef;border-radius:10px;background:#f8f9fc}.mini-pool-head{display:flex;justify-content:space-between;margin-bottom:6px;color:#66738a;font-size:9px}.mini-pool-track{display:flex;gap:3px;height:34px}.mini-pool .diagram-segment{font-size:8px}.multi-controls{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.multi-controls .button{min-height:32px;padding:0 9px;font-size:9px}.shared-bins{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}.shared-bin{padding:6px 8px;border:1px solid #dbe2ed;border-radius:7px;background:white;color:#53617a;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}.shared-bin b{color:var(--mint)}
+    .layout-toggle{display:flex;gap:6px;margin-bottom:13px}.layout-toggle .mode-button{padding:0 12px;border:1px solid #e1e6ef;background:#f8f9fc}.layout-toggle .mode-button.selected{border-color:#bdc9ff;background:var(--blue-soft)}.header-layout{display:grid;grid-template-columns:1fr 1.25fr 1.8fr;gap:5px;min-height:84px}.header-field{display:flex;flex-direction:column;justify-content:space-between;padding:10px;border:1px solid #dbe2ed;border-radius:8px;background:#f7f8fb;color:#526079;font-size:9px;line-height:1.55}.header-field b{color:#293a58;font:800 9px ui-monospace,SFMono-Regular,Menlo,monospace}.header-field.payload{border-color:#b5dfd1;background:var(--mint-soft)}.header-field.flags{border-color:#f0cc91;background:#fff5e5}.flag-controls{display:flex;gap:5px;margin-top:10px}.flag-button{padding:6px 8px;border:1px solid #e1e6ef;border-radius:7px;background:white;color:#59677e;font-size:8px}.flag-button.selected{border-color:#f0bf71;background:var(--amber-soft);color:#885615}.bit-strip{display:flex;gap:3px;margin-top:8px}.bit-chip{padding:5px 7px;border-radius:5px;background:#e9edf4;color:#65728a;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}.bit-chip.on{background:#ffdda8;color:#85510e}.complexity-note{margin-top:14px;padding:13px;border-radius:10px;background:#eff2f8;color:#56647b;font-size:10px;line-height:1.75}.source-ref{margin-top:10px;color:#8994a6;font-size:9px}
+    @media(max-width:980px){.hero{gap:28px}.bench-layout{grid-template-columns:240px minmax(0,1fr);gap:15px}.workbench{padding:22px}.inspect-grid{grid-template-columns:1fr}}
+    @media(max-width:720px){.shell{width:min(100% - 28px,560px)}.topbar{height:58px}.toplinks{gap:14px;font-size:11px}.hero{grid-template-columns:1fr;gap:28px;padding:48px 0 34px}h1{font-size:clamp(38px,11vw,55px)}.hero-visual{min-height:230px}.hero-stats{grid-template-columns:repeat(2,1fr);padding-bottom:35px}.section-heading{align-items:start;flex-direction:column}.section-heading p{font-size:12px}.workbench{padding:16px;border-radius:16px}.bench-top{align-items:start}.bench-top h2{font-size:18px}.bench-layout{grid-template-columns:1fr}.controls{order:1;padding:15px}.scene{order:0}.action-buttons{grid-template-columns:1fr 1fr}.stage-box{min-height:118px}.scene-stats{grid-template-columns:repeat(2,1fr)}.scene-stat{padding:9px 7px}.pool-frame{padding:14px 10px 12px}.pool-track{min-height:74px;gap:3px}.mem-block{padding:8px 5px}.mem-block .block-name,.mem-block .block-size{font-size:8px}.sentinel{flex-basis:31px;font-size:8px}.inspect-grid{grid-template-columns:1fr}.mechanism-grid{grid-template-columns:1fr}.mechanism-card{min-height:auto}.learning-route{justify-content:flex-start;overflow-x:auto;white-space:nowrap}.setup-card{grid-template-columns:1fr;padding:14px}.init-walk{grid-template-columns:1fr}.init-controls{justify-content:flex-start}.setup-foot{flex-direction:column}.fragment-card,.api-grid,.boundary-grid{grid-template-columns:1fr}.api-footnotes{grid-template-columns:1fr}.footer{flex-direction:column}}
+    @media(max-width:390px){.toplinks a:first-child{display:none}.hero-actions{flex-direction:column;align-items:stretch}.bench-top .button{padding:0 10px}.bitmap-row{grid-template-columns:63px minmax(0,1fr);gap:5px}.bits{gap:1px}.bit-legend{margin-left:68px}}
+    .setup-foot{flex-wrap:wrap}.setup-foot span{flex:1 1 260px}.control-formula{margin-top:10px;padding:10px 11px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.06);color:#bac7e1;font-size:9px;line-height:1.65}.control-formula b{display:block;margin-bottom:3px;color:#fff;font-size:10px}.control-formula code{color:#d3dcf0;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}
+    @media(max-width:720px){.toplinks{max-width:66vw;overflow-x:auto;white-space:nowrap;scrollbar-width:none}.toplinks::-webkit-scrollbar{display:none}}
+    @media(max-width:390px){.toplinks a:first-child{display:inline}}
+    @media(max-width:720px){.chapter#fragmentation{margin-top:64px}.fragment-link-note{flex-direction:column;gap:3px}.fragment-scene-caption{flex-direction:column;gap:2px}.fragment-scene-caption span:nth-child(2){text-align:left}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="TLSF Lab 首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>TLSF / LAB</span></a>
+      <nav class="toplinks" aria-label="页面导航"><a href="#pool-setup">准备内存</a><a href="#simulator">分配与释放</a><a href="#fragmentation">碎片实验</a><a href="#api-paths">其他路径</a><a href="#internals">块结构</a><a href="#principles">TLSF优势</a></nav>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow">TLSF · Two-Level Segregated Fit · 01</div>
+          <h1 id="hero-title">空闲块很多，<br>怎样快速找到合适的那一个？</h1>
+          <p>TLSF（Two-Level Segregated Fit，两级分离适配）把空闲块按大小分为两级，以位图快速定位候选块。在固定配置下，分配与释放的块管理时间复杂度为 O(1)；结合按需切分和相邻空闲块合并，在保持快速响应的同时较好地控制内存碎片。它不会搬动仍在使用的块，因此不能消除所有外部碎片。下面可以逐步观察建池、查找、切分与合并过程。</p>
+          <div class="hero-actions"><a class="button primary" href="#pool-setup">从准备内存开始 <span aria-hidden="true">↓</span></a><a class="button" href="#simulator">直接试分配</a></div>
+        </div>
+        <div class="hero-visual" aria-label="内存块与两级分类的示意动画">
+          <div class="visual-head"><span>POOL → BIN → BLOCK</span><span class="live-dot">LIVE MODEL</span></div>
+          <div class="mini-map" aria-hidden="true"><span>A</span><span>FREE</span><span>X</span><span>FREE</span><span>B</span></div>
+          <div class="visual-route"><span>请求</span><span class="route-arrow">→</span><span>FL</span><span class="route-arrow">→</span><span class="route-bit"><i></i><i></i><i></i></span><span>SL 位图</span><span class="route-arrow">→</span><span>候选块</span></div>
+        </div>
+      </section>
+      <section class="hero-stats" aria-label="本演示所采用的参数">
+        <div class="stat-card"><b>32 个 SL 档位</b><span>每个一级范围细分为 32 份</span></div><div class="stat-card"><b>8 B 对齐</b><span>按仓库 64 位配置展示</span></div><div class="stat-card"><b>位图定位</b><span>跳到第一个合适的非空分类</span></div><div class="stat-card"><b>立即合并</b><span>释放时检查物理相邻块</span></div>
+      </section>
+      <div class="learning-route" aria-label="学习路径"><span>01 <b>调用方划区</b></span><i>→</i><span>02 <b>初始化内存池</b></span><i>→</i><span>03 <b>查找与切分</b></span><i>→</i><span>04 <b>释放与合并</b></span><i>→</i><span>05 <b>碎片与扩展</b></span></div>
+      <section id="pool-setup" class="chapter" aria-labelledby="pool-title">
+        <div class="section-heading"><div><div class="eyebrow">01 / Caller-owned memory</div><h2 id="pool-title">先划定 TLSF 能管理的内存范围</h2></div><p>TLSF 不向操作系统扩堆。应用先准备对齐且可写的内存，再初始化控制结构并加入一个或多个 pool；tlsf_destroy() 也不会替调用方释放这些区域。</p></div>
+        <div class="setup-card">
+          <div class="setup-controls">
+            <div class="setup-mode"><button type="button" class="mode-button selected" data-placement="combined">同一段内存</button><button type="button" class="mode-button" data-placement="separate">控制区与池分开</button></div>
+            <label class="range-label" for="poolBytes"><span id="poolRangeLabel">调用方提供的总缓冲区</span><b id="poolBytesText">32 KiB</b></label>
+            <input id="poolBytes" class="range-input" type="range" min="8192" max="65536" step="4096" value="32768">
+            <div class="range-ends"><span>8 KiB</span><span>64 KiB</span></div>
+            <p class="setup-note" id="poolSetupNote"></p>
+          </div>
+          <div class="setup-visual">
+            <div class="setup-visual-head"><span>CALLER MEMORY → TLSF POOL</span><span id="poolFitBadge" class="fit-badge"></span></div>
+            <div id="poolDiagram" class="pool-diagram" aria-label="控制结构和内存池布局"></div>
+            <div class="setup-numbers" id="poolSetupNumbers"></div>
+            <div class="control-formula" id="controlFormula" aria-label="control_t 字段大小计算"></div>
+          </div>
+          <div class="init-walk">
+            <div class="init-copy"><div class="step-tag" id="initStepCount">READY</div><h3 id="initStepTitle">内存由调用方掌控</h3><p id="initStepBody">选择布局方式，再单步观察 tlsf_create、control_construct 和 tlsf_add_pool 如何把一段缓冲区变成可分配内存。</p></div>
+            <div class="init-controls"><button class="button" id="initBack" type="button" disabled>← 上一步</button><button class="button primary" id="initNext" type="button">初始化并下一步 →</button><button class="button" id="initPlay" type="button">▶ 自动演示</button><button class="button" id="initReset" type="button">重置</button></div>
+            <div class="init-timeline" id="initTimeline"></div>
+          </div>
+          <div class="setup-foot"><span><b>pool 开销：</b>tlsf_pool_overhead() = 2 × sizeof(size_t) = 16 B；初始块大小为 align_down(pool 字节数 − 16, 8)，最小块体为 24 B。图中将 16 B 头部放宽显示以便辨认。</span><span><b>对齐与调用：</b>64 位配置的 tlsf_align_size() = 8 B。tlsf_create_with_pool() 不会把加入 pool 失败转换成创建失败；调用方需保证区域足够且对齐。</span><span><b>场景输入：</b>分配请求和块大小用于构造可复算的示例，不是 TLSF 固定常量；约束值取自源码。</span></div>
+        </div>
+      </section>
+      <section id="simulator" aria-labelledby="sim-title">
+        <div class="section-heading"><div><div class="eyebrow">02 / Allocation & coalescing</div><h2 id="sim-title">分配与释放沙盘</h2></div><p>分配流程看 malloc 的分类查找与切分；点击“演示释放 X 并合并”，逐步看 free 如何检查左右邻块、摘链、合并并重新插入。</p></div>
+        <div class="workbench">
+          <div class="bench-top"><div><div class="bench-kicker">LIVE MEMORY MODEL</div><h2>把请求走完一遍</h2></div><button class="button" id="resetButton" type="button" title="恢复初始示例状态">↺ 重置场景</button></div>
+          <div class="bench-layout">
+            <aside class="controls" aria-label="模拟操作">
+              <h3 class="control-title">发起一次操作</h3><p class="control-caption">输入应用请求的载荷大小。TLSF 会先对齐，再据此搜索空闲分类。</p>
+              <label class="input-label" for="requestSize"><span>请求大小</span><span>可观察分类映射</span></label>
+              <div class="size-input-wrap"><input id="requestSize" type="number" min="1" max="4096" step="8" value="72" inputmode="numeric" aria-label="分配请求大小，单位字节"><span>B</span></div>
+              <div class="action-buttons"><button class="button primary" id="allocateButton" type="button">＋ 分配请求</button><button class="button" id="playButton" type="button">▶ 自动演示</button><button class="button" id="releaseXButton" type="button" title="在第 2 部分逐步演示 free(X) 及邻块合并">↻ 演示释放 X 并合并</button></div>
+              <div class="divider"></div>
+              <div class="transport"><button class="button" id="backButton" type="button" disabled>← 上一步</button><button class="button" id="nextButton" type="button" disabled>下一步 →</button></div>
+              <div class="speed-row"><label for="speedSelect">播放间隔</label><select id="speedSelect"><option value="1400">慢速</option><option value="900" selected>标准</option><option value="500">快速</option></select></div>
+              <div class="demo-hint">看释放过程：点这里的 <b>演示释放 X 并合并</b>，或点内存池下方的“释放 X”指针按钮；第 2 部分会逐步展示 free 的摘链、左右检查、合并和回插。先分配也可以：malloc(72) 从 128 B 空闲块切分后，X 左右仍为空闲块。示例块尺寸是场景输入，不是 TLSF 内置常量。</div>
+              <div class="stage-box" aria-live="polite"><div class="stage-meta"><span id="stageCount">READY</span><span id="stageVerb">等待操作</span></div><h3 id="stageTitle">从请求大小开始</h3><p id="stageBody">选择分配，或点击一个已分配块开始释放。你可以逐步前进、回退或自动播放。</p><div class="timeline" id="timeline" aria-hidden="true"></div></div>
+            </aside>
+            <div class="scene">
+              <div class="scene-topline"><span class="scene-label">物理内存池 <span aria-hidden="true">·</span> 低地址 → 高地址</span><span class="pool-meta" id="poolMeta"></span></div>
+              <div class="pool-frame"><div class="addr-labels"><span>pool start</span><span>块按物理相邻关系排列</span><span>pool end</span></div><div class="pool-track" id="poolBlocks" role="img" aria-label="内存池中的物理块布局"></div><div class="pool-caption"><span>块宽近似按物理占用绘制；块头开销也计入总跨度。</span><span>末尾哨兵阻止跨池访问</span></div></div>
+              <div class="legend" aria-label="内存块图例"><span><i></i>已分配</span><span><i class="free-dot"></i>空闲</span><span><i class="step-dot"></i>本步处理</span></div>
+              <div class="scene-stats" aria-label="内存池统计"><div class="scene-stat"><b id="usedCount">0</b><span>已分配块</span></div><div class="scene-stat"><b id="freeCount">0</b><span>空闲块</span></div><div class="scene-stat"><b id="freeTotal">0 B</b><span>空闲总量</span></div><div class="scene-stat"><b id="largestFree">0 B</b><span>最大连续块</span></div></div>
+              <div class="alloc-row"><span class="alloc-row-label">已分配指针 · 点击释放</span><div class="alloc-pills" id="allocatedPills"></div></div>
+              <div class="inspect-grid">
+                <section class="subpanel" aria-labelledby="map-title"><div class="subpanel-head"><h3 id="map-title">请求如何映射到 FL / SL</h3><span>mapping_search → mapping_insert</span></div><div class="probe-result" id="probeResult"></div><p class="probe-note" id="probeNote"></p><p class="mapping-detail">FL 按数量级分组；每个较大 FL 再切成 32 个 SL。搜索映射向上取整以保证找到的分类足够大，因此它不是扫描所有空闲块的全局 best-fit。</p><div class="bitmap-wrap"><div class="subpanel-head"><h3>空闲分类位图</h3><span>高亮目标档位与候选档位</span></div><div id="bitmaps"></div></div><div class="bit-legend"><span><i></i>该 SL 链表非空</span><span><i class="target-key"></i>起始搜索档位</span><span><i class="candidate-key"></i>命中档位</span></div></section>
+                <section class="subpanel" aria-labelledby="lists-title"><div class="subpanel-head"><h3 id="lists-title">非空空闲链表</h3><span>每个 FL / SL 对应一条双向链表</span></div><div class="free-lists" id="freeLists"></div></section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="fragmentation" class="chapter" aria-labelledby="fragment-title">
+        <div class="section-heading"><div><div class="eyebrow">03 / Fragmentation lab</div><h2 id="fragment-title">总空闲量够，为什么仍然分配失败？</h2></div><p>在本节固定的独立内存池里，对照空闲总量与最大连续块；释放中间块后，再观察请求何时重新可满足。</p></div>
+        <div class="fragment-link-note"><b>与第 2 部分的关系</b><span>第 2 部分有详细 free 执行轨迹：点击“演示释放 X 并合并”，观察摘链、检查邻块、合并、回插。本节只演示释放带来的布局变化与分配结果；两节遵循同一套 TLSF 规则，但状态互不共享。本节按钮不会启动或修改第 2 部分。<a href="#simulator">回到第 2 部分</a></span></div>
+        <div class="fragment-card">
+          <div class="fragment-explain">
+            <h3>外部碎片挑战：360 B 请求</h3>
+            <p>初始池里有 128 B、240 B、320 B 三个空闲块，合计 688 B；但最大连续块只有 320 B。请求 360 B 时，没有任何单块能满足，TLSF 返回 NULL。空闲块分散在仍存活的 A、X、B 等分配块之间。</p>
+            <p>再释放 X：它左右的 128 B 与 240 B 空闲块会被摘链并合并为 480 B。此时重试 360 B 可从 480 B 中切出请求块。TLSF 会立即合并相邻空闲块，但不会搬动仍存活对象，所以无法消除所有外部碎片。</p>
+            <div class="fragment-scene"><div class="fragment-scene-head"><b>本节独立 pool · 低地址 → 高地址</b><span id="fragmentStageLabel">初始布局</span></div><div class="fragment-track" id="fragmentTrack" role="img" aria-label="碎片实验内存池"></div><div class="fragment-legend" aria-label="内存块颜色说明"><span><i class="fragment-swatch used"></i>已分配块</span><span><i class="fragment-swatch free"></i>空闲块</span><span><i class="fragment-swatch focus"></i>当前步骤关注</span><span><i class="fragment-swatch sentinel"></i>池末哨兵</span></div><div class="fragment-scene-caption"><span id="fragmentSceneCaption">点击第 1 步，尝试申请 360 B</span></div></div>
+            <div class="fragment-actions-head"><b>本节操作</b><span>按 1 → 2 → 3 顺序执行；↺ 只恢复本节布局和统计</span></div>
+            <div class="fragment-actions"><button class="button primary" id="fragmentFailButton" type="button">1 · 尝试申请 360 B</button><button class="button" id="fragmentReleaseButton" type="button" disabled>2 · 释放 X 并合并</button><button class="button" id="fragmentRetryButton" type="button" disabled>3 · 重试申请 360 B</button><button class="button" id="fragmentResetButton" type="button" title="只重置本节独立沙盘">↺ 重置本节</button></div>
+            <div class="fragment-formula">外部碎片：空闲总量 ≥ 请求，但最大连续块 &lt; 请求。<br>内部碎片：对齐、最小块尺寸、无法切分的小尾部会占用额外空间。</div>
+          </div>
+          <div class="fragment-metrics">
+            <div class="fragment-metric"><b id="fragRequest">360 B</b><span>本节请求（按 8 B 对齐）</span></div><div class="fragment-metric"><b id="fragTotal">688 B</b><span>本节空闲块总量</span></div><div class="fragment-metric"><b id="fragLargest">320 B</b><span>本节最大连续块</span></div><div class="fragment-metric"><b id="fragCount">3</b><span>本节空闲块数量</span></div>
+            <div class="fragment-verdict" id="fragmentVerdict" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+      <section id="api-paths" class="chapter" aria-labelledby="api-title">
+        <div class="section-heading"><div><div class="eyebrow">04 / Beyond malloc & free</div><h2 id="api-title">realloc 与 memalign 也沿着块边界工作</h2></div><p>选择一种典型路径，单步观察内存块怎样原地伸缩、搬迁或为对齐预留前缀。这里的轨迹是独立的教学场景。</p></div>
+        <div class="api-panel">
+          <div class="api-tabs" role="tablist" aria-label="高级操作场景">
+            <button class="api-tab active" type="button" data-api="shrink">realloc 收缩</button><button class="api-tab" type="button" data-api="grow">realloc 原地扩展</button><button class="api-tab" type="button" data-api="move">realloc 搬迁</button><button class="api-tab" type="button" data-api="align">memalign 对齐</button>
+          </div>
+          <div class="align-options" id="alignOptions" hidden><label for="alignValue">对齐边界<select id="alignValue"><option value="16">16 B</option><option value="32" selected>32 B</option><option value="64">64 B</option></select></label><label for="alignRequest">载荷请求<input id="alignRequest" type="number" min="1" step="8" value="80"> B</label></div>
+          <div class="api-grid">
+            <div>
+              <div class="api-visual"><div class="scene-topline"><span class="scene-label" id="apiSceneLabel">原地收缩</span><span class="pool-meta">低地址 → 高地址</span></div><div class="api-track" id="apiTrack" role="img" aria-label="realloc 或 memalign 的块布局"></div></div>
+              <p class="api-caption" id="apiCaption"></p>
+            </div>
+            <div>
+              <div class="api-stage" aria-live="polite"><div class="stage-tag" id="apiStepCount">STEP 1</div><h3 id="apiStepTitle"></h3><p id="apiStepBody"></p></div>
+              <div class="api-transport"><button class="button" id="apiBack" type="button">← 上一步</button><button class="button primary" id="apiNext" type="button">下一步 →</button><button class="button" id="apiPlay" type="button">▶ 自动演示</button></div>
+            </div>
+          </div>
+          <div class="api-footnotes">
+            <div class="api-footnote"><b>realloc 的边界语义</b>ptr 为 NULL 时等同 malloc；size 为 0 时释放并返回 NULL；新块分配失败时保留旧块。</div>
+            <div class="api-footnote"><b>搬迁的成本</b>回退路径申请新块，复制 min(旧容量, 新请求) 字节，再释放旧块。复制耗时随字节数增长。</div>
+            <div class="api-footnote"><b>memalign 的边界语义</b>align 应为 2 的幂。对齐空隙若太小，代码会跳到下一个对齐位置，避免留下无法表示的前缀碎片。</div>
+          </div>
+          <div class="source-ref">源码路径：tlsf_realloc() · block_trim_used() · tlsf_memalign() · block_trim_free_leading()</div>
+        </div>
+      </section>
+      <section id="internals" class="chapter" aria-labelledby="internals-title">
+        <div class="section-heading"><div><div class="eyebrow">05 / Boundaries & metadata</div><h2 id="internals-title">多池边界与块头状态</h2></div><p>分类表属于 TLSF 控制结构，物理块属于各自 pool。位图可以共享，物理合并必须尊重每个池的边界。</p></div>
+        <div class="boundary-grid">
+          <article class="boundary-card">
+            <h3>多个 pool 共用一套分类表</h3><p>加入 Pool B 后，它的空闲块也会进入同一组 FL/SL 链表；每个 pool 都有自己的哨兵，块不会跨池合并。</p>
+            <div class="multi-pools" id="multiPools"></div>
+            <div class="shared-bins" id="multiBins"></div>
+            <div class="multi-controls"><button class="button primary" id="multiAdd" type="button">＋ tlsf_add_pool(B)</button><button class="button" id="multiRelease" type="button" disabled>释放 B 中的 X</button><button class="button" id="multiRemove" type="button" disabled>tlsf_remove_pool(B)</button></div>
+            <p id="multiStatus" class="source-ref">Pool A 已加入控制结构；Pool B 尚未加入。</p>
+          </article>
+          <article class="boundary-card">
+            <h3>块头把状态塞进对齐空出的低位</h3><p>块大小按 8 B 对齐，因此 size 的低两位可记录当前块与前一物理块的状态。空闲时，载荷开头改作链表指针。</p>
+            <div class="layout-toggle"><button class="mode-button selected" type="button" data-layout="used">已分配块</button><button class="mode-button" type="button" data-layout="free">空闲块</button></div>
+            <div id="headerLayout" class="header-layout"></div>
+            <div class="bit-strip" id="flagBits"></div>
+            <div class="flag-controls"><button class="flag-button" id="currentFlagButton" type="button">切换当前块状态</button><button class="flag-button selected" id="prevFlagButton" type="button">切换前块状态</button></div>
+            <div class="complexity-note" id="headerNote"></div>
+            <div class="source-ref">源码路径：block_header_t · block_is_free() · block_is_prev_free() · block_next()</div>
+          </article>
+        </div>
+        <div class="complexity-note"><b>复杂度边界：</b>malloc/free 的块管理路径使用固定宽度位图、固定数量链表指针和直接相邻块访问，不随池内块数增长。tlsf_walk_pool()、tlsf_check() 会遍历；realloc 搬迁时的 memcpy 与复制字节数成正比。该实现不提供线程安全或向操作系统扩容。</div>
+      </section>
+      <section id="principles" class="mechanisms" aria-labelledby="principles-title">
+        <div class="section-heading"><div><div class="eyebrow">06 / TLSF 的优势与代价</div><h2 id="principles-title">为什么选 TLSF：让分配开销可预期</h2></div><p>核心价值不是“任何情况下都最快”，而是让 malloc/free 的块管理路径不随池内块数增长，并在可控内存池中复用不同大小的块。</p></div>
+        <div class="advantage-grid" aria-label="TLSF 的主要优势">
+          <article class="advantage-card"><div class="advantage-label"><i></i>有界查找</div><h3>分配与释放均为 O(1)</h3><p>分配请求映射到 FL/SL 后，由固定宽度位图定位候选分类，不逐个扫描空闲块；释放只检查直接相邻块并更新链表。因此块管理步骤不随池内块数增长。</p><div class="adv-flow" aria-label="请求大小映射到分类，再经位图定位链表头"><span>请求大小</span><b>→</b><span>FL / SL</span><b>→</b><span>位图</span><b>→</b><span>链表头</span></div><div class="adv-source">mapping_search() · search_suitable_block()</div></article>
+          <article class="advantage-card"><div class="advantage-label"><i></i>碎片控制</div><h3>切分与合并兼顾速度和空间</h3><p>分配时按需切分空闲块，释放时合并相邻空闲块，减少小空洞长期分散。大小分类让查找保持有界，但它不是精确 best-fit；TLSF 不会搬动仍在使用的块，无法消除所有外部碎片。</p><div class="adv-flow" aria-label="空闲块按需切分，释放后与相邻空闲块合并"><span>空闲块</span><b>→</b><span>按需切分</span><b>+</b><span>相邻合并</span><b>→</b><span>可复用空间</span></div><div class="adv-source">block_split() · block_merge_prev() · block_merge_next()</div></article>
+          <article class="advantage-card"><div class="advantage-label"><i></i>内存可控</div><h3>内存池由调用方提供</h3><p>应用决定 TLSF 管理哪段内存；可以初始化一个 pool，也可以把多个区域加入同一管理器。分配器本身不会向操作系统扩堆。</p><div class="adv-flow" aria-label="应用提供内存区域给 TLSF 管理"><span>应用内存区</span><b>→</b><span>control_t</span><b>+</b><span>pool</span></div><div class="adv-source">tlsf_create_with_pool() · tlsf_add_pool()</div></article>
+        </div>
+        <div class="advantage-boundary"><div class="advantage-note fit"><b>适用场景</b>对分配延迟可预测、内存边界明确有要求的系统，例如嵌入式或实时工作负载。这里的 O(1) 指分配器块管理步骤，不包含调度、锁、缓存未命中等整机耗时。</div><div class="advantage-note cost"><b>必须一起考虑的代价</b>64 位示例中 control_t 为 6536 B，每个已分配块头开销为 8 B，每个 pool 开销为 16 B；小内存池里这部分占比可能明显。分类查找不是精确 best-fit；TLSF 不搬动仍存活对象，因此不能消除所有外部碎片。具体开销可分别查询 tlsf_size()、tlsf_alloc_overhead()、tlsf_pool_overhead()。</div></div>
+        <h3 class="mechanism-subhead">这些优势在实现中对应的六条规则</h3>
+        <div class="mechanism-grid">
+          <article class="mechanism-card"><div class="mechanism-num">01</div><h3>同一块有两种关系</h3><p>pool 中的物理顺序用来找左右邻块；空闲块按 FL/SL 放入大小分类链表。一个是地址关系，一个是查找关系，不能混为一条链。</p></article>
+          <article class="mechanism-card"><div class="mechanism-num">02</div><h3>按大小划分候选</h3><p>小于 256 B 的块按 8 B 步长进入 FL 0；更大的块按 2 的幂分 FL，再把每个范围均分为 32 个 SL。</p></article>
+          <article class="mechanism-card"><div class="mechanism-num">03</div><h3>搜索映射向上取整</h3><p>大块请求先向上取整到分类边界，确保候选块不会比请求小。结果是有界查找，但不保证选出全局最小的可用块。</p></article>
+          <article class="mechanism-card"><div class="mechanism-num">04</div><h3>只在余量可表示时切分</h3><p>余量必须容纳新块头和至少 24 B 的最小块体；不足时整块交给调用方，避免制造无法再次管理的碎片。</p></article>
+          <article class="mechanism-card"><div class="mechanism-num">05</div><h3>释放时先摘链、再合并</h3><p>如果左右邻块空闲，先从原分类链表移除，再吸收相邻块头，最后只把合并结果映射并插入一次。</p></article>
+          <article class="mechanism-card"><div class="mechanism-num">06</div><h3>快速不等于没有边界</h3><p>malloc/free 元数据操作不随块数增长；遍历与检查会扫描，realloc 搬迁要复制数据。TLSF 不扩堆，也不自动搬动活块消除外部碎片。</p></article>
+        </div>
+      </section>
+    </main>
+    <footer class="footer"><span>此页是基于仓库 tlsf.c 的教学模拟，不会申请或修改真实内存。</span><span><a href="DESIGN.md">阅读完整设计说明</a> · 参数对应 64 位示例：8 B 对齐、SL_INDEX_COUNT = 32。</span></footer>
+  </div>
+  <script>
+    (function(){
+      "use strict";
+      var ALIGN=8,SMALL=256,SL_COUNT=1<<5,HEADER=8,MIN_BLOCK=24;
+      var TLSF_FL_COUNT=32-(5+3)+1,TLSF_PTR_BYTES=8,TLSF_SIZE_BYTES=8,TLSF_UINT_BYTES=4;
+      // Sum control_t fields for tlsf.c's 64-bit configuration: 3 pointers + size_t, bitmaps, and FL/SL heads.
+      var CONTROL_BYTES=3*TLSF_PTR_BYTES+TLSF_SIZE_BYTES+TLSF_UINT_BYTES+TLSF_FL_COUNT*TLSF_UINT_BYTES+TLSF_FL_COUNT*SL_COUNT*TLSF_PTR_BYTES;
+      var initialBlocks=[
+        {id:"A",label:"A",kind:"used",size:160},
+        {id:"F1",label:"F1",kind:"free",size:128},
+        {id:"X",label:"X",kind:"used",size:96},
+        {id:"F2",label:"F2",kind:"free",size:240},
+        {id:"B",label:"B",kind:"used",size:128},
+        {id:"F3",label:"F3",kind:"free",size:320}
+      ];
+      var fragmentInitialBlocks=[
+        {id:"A",label:"A",kind:"used",size:160},
+        {id:"F1",label:"F1",kind:"free",size:128},
+        {id:"X",label:"X",kind:"used",size:96},
+        {id:"F2",label:"F2",kind:"free",size:240},
+        {id:"B",label:"B",kind:"used",size:128},
+        {id:"F3",label:"F3",kind:"free",size:320}
+      ];
+      var state,active=null,timer=null,pointerNumber=1,remainderNumber=4;
+      var fragmentState,fragmentStage=0;
+      var lastMessage="示例池已就绪：初始空闲块为 128 B、240 B、320 B。";
+      var $=function(id){return document.getElementById(id);};
+      function cloneBlocks(blocks){return blocks.map(function(b){return{id:b.id,label:b.label,kind:b.kind,size:b.size,detached:!!b.detached,request:b.request||0};});}
+      function stopTimer(){if(timer)window.clearInterval(timer);timer=null;}
+      function reset(){stopTimer();$("requestSize").value="72";state=cloneBlocks(initialBlocks);active=null;pointerNumber=1;remainderNumber=4;lastMessage="示例池已就绪：初始空闲块为 128 B、240 B、320 B。";render();}
+      function resetFragment(){fragmentState=cloneBlocks(fragmentInitialBlocks);fragmentStage=0;renderFragment();}
+      function startFragmentChallenge(){if(fragmentStage!==0)return;fragmentStage=1;renderFragment();}
+      function releaseFragmentX(){
+        if(fragmentStage!==1)return;
+        var next=cloneBlocks(fragmentState),left=next.findIndex(function(block){return block.id==="F1";});
+        if(left<0||!next[left+1]||!next[left+2]||next[left+1].id!=="X"||next[left+2].id!=="F2")return;
+        var mergedSize=next[left].size+HEADER+next[left+1].size+HEADER+next[left+2].size;
+        next.splice(left,3,{id:"M",label:"M",kind:"free",size:mergedSize});
+        fragmentState=next;fragmentStage=2;renderFragment();
+      }
+      function retryFragmentAllocation(){
+        if(fragmentStage!==2)return;
+        var next=cloneBlocks(fragmentState),index=next.findIndex(function(block){return block.id==="M";});
+        if(index<0)return;
+        var source=next[index],size=adjustedSize(360);
+        if(source.size<size+HEADER*4)return;
+        var remainder=source.size-size-HEADER;
+        next.splice(index,1,{id:"P3",label:"P3",kind:"used",size:size,request:360},{id:"R3",label:"R3",kind:"free",size:remainder});
+        fragmentState=next;fragmentStage=3;renderFragment();
+      }
+      function alignUp(value,alignment){return Math.ceil(value/alignment)*alignment;}
+      function adjustedSize(value){return Math.max(alignUp(value,ALIGN),MIN_BLOCK);}
+      function mappingInsert(size){
+        if(size<SMALL)return{fl:0,sl:Math.floor(size/(SMALL/SL_COUNT))};
+        var top=Math.floor(Math.log2(size)),shift=top-5;
+        return{fl:top-7,sl:Math.floor(size/Math.pow(2,shift))^SL_COUNT};
+      }
+      function mappingSearch(size){
+        var searchSize=size;
+        if(searchSize>=SMALL)searchSize+=Math.pow(2,Math.floor(Math.log2(searchSize))-5)-1;
+        return{size:searchSize,index:mappingInsert(searchSize)};
+      }
+      function keyOf(index){return index.fl+":"+index.sl;}
+      function sameIndex(a,b){return!!a&&!!b&&a.fl===b.fl&&a.sl===b.sl;}
+      function displayFL(fl){if(fl===0)return"FL 0 · <256 B";var min=Math.pow(2,fl+7),max=Math.pow(2,fl+8)-ALIGN;return"FL "+fl+" · "+min+"–"+max+" B";}
+      function binsFor(blocks){
+        var bins={};
+        blocks.forEach(function(block,position){
+          if(block.kind!=="free"||block.detached)return;
+          var index=mappingInsert(block.size),key=keyOf(index);
+          if(!bins[key])bins[key]={index:index,blocks:[]};
+          bins[key].blocks.push({block:block,position:position});
+        });
+        return bins;
+      }
+      function findCandidate(blocks,target){
+        var bins=binsFor(blocks),maxFL=target.fl;
+        Object.keys(bins).forEach(function(key){maxFL=Math.max(maxFL,bins[key].index.fl);});
+        for(var fl=target.fl;fl<=maxFL;fl++){
+          var start=fl===target.fl?target.sl:0;
+          for(var sl=start;sl<SL_COUNT;sl++){
+            var bin=bins[fl+":"+sl];
+            if(bin&&bin.blocks.length)return{block:bin.blocks[0].block,index:{fl:fl,sl:sl},bins:bins};
+          }
+        }
+        return{block:null,index:null,bins:bins};
+      }
+      function requestProbe(){
+        var raw=Number($("requestSize").value);
+        if(!Number.isFinite(raw)||raw<1)return{invalid:true};
+        var adjusted=adjustedSize(raw),mapped=mappingSearch(adjusted),found=findCandidate(state,mapped.index);
+        return{raw:raw,adjusted:adjusted,mapped:mapped,candidate:found.block,candidateIndex:found.index,bins:found.bins};
+      }
+      function withKind(blocks,index,kind){var next=cloneBlocks(blocks);if(index>=0&&index<next.length)next[index].kind=kind;return next;}
+      function startAllocation(){
+        if(active)return;
+        var probe=requestProbe();
+        if(probe.invalid){lastMessage="请输入大于 0 的请求大小。";render();return;}
+        if(!probe.candidate){lastMessage="没有满足该请求的空闲块：malloc 会返回 NULL，池状态保持不变。";render();return;}
+        var candidateIndex=state.findIndex(function(b){return b.id===probe.candidate.id;}),source=state[candidateIndex];
+        var size=probe.adjusted,canSplit=source.size>=size+HEADER*4,finalBlocks=cloneBlocks(state);
+        var pointer="P"+pointerNumber++,allocatedSize=canSplit?size:source.size;
+        var replacement=[{id:pointer,label:pointer,kind:"used",size:allocatedSize,request:probe.raw}],remainderLabel="";
+        if(canSplit){remainderLabel="F"+remainderNumber++;replacement.push({id:remainderLabel,label:remainderLabel,kind:"free",size:source.size-size-HEADER});}
+        finalBlocks.splice.apply(finalBlocks,[candidateIndex,1].concat(replacement));
+        var detached=withKind(state,candidateIndex,"detached");
+        var steps=[
+          {title:"调整请求大小",body:probe.raw+" B 按 "+ALIGN+" B 对齐，且不低于最小块尺寸，得到 "+size+" B。",verb:"ALIGN"},
+          {title:"向上映射到 FL / SL",body:"mapping_search 将请求映射到 "+displayFL(probe.mapped.index.fl)+"，SL "+probe.mapped.index.sl+"。大块请求先向上取整到分类边界，保证候选块不会更小。",verb:"MAP"},
+          {title:"扫描两级位图",body:"从 FL "+probe.mapped.index.fl+" 的 SL "+probe.mapped.index.sl+" 起屏蔽低位；命中 "+displayFL(probe.candidateIndex.fl)+" / SL "+probe.candidateIndex.sl+"，取该链表表头 "+source.label+"（"+source.size+" B）。",verb:"BITSCAN"},
+          {title:"从空闲链表摘除",body:source.label+" 从 FL "+probe.candidateIndex.fl+" / SL "+probe.candidateIndex.sl+" 链表移除；若该分类变空，对应 SL 位和必要时 FL 位会清零。",verb:"UNLINK"},
+          {title:canSplit?"切分块并回插余量":"余量不足，整块分配",body:canSplit?source.size+" B 拆为已分配 "+size+" B 与空闲 "+(source.size-size-HEADER)+" B；新余量按自己的大小映射后插入链表。":"剩余空间不足以容纳块头与最小空闲块，TLSF 保留整个 "+source.size+" B 块作为本次分配。",verb:"SPLIT"},
+          {title:"返回用户指针",body:"得到 "+pointer+"。块管理步骤只访问固定宽度的位图、链表指针和相邻块头。",verb:"RETURN"}
+        ];
+        active={type:"alloc",cursor:-1,baseline:cloneBlocks(state),result:finalBlocks,candidateId:source.id,target:probe.mapped.index,hit:probe.candidateIndex,steps:steps,states:[cloneBlocks(state),cloneBlocks(state),cloneBlocks(state),detached,cloneBlocks(finalBlocks),cloneBlocks(finalBlocks)],summary:"malloc("+probe.raw+") → "+pointer+"；"+(canSplit?"切出 "+(source.size-size-HEADER)+" B 余量。":"使用整个候选块。")};
+        render();
+      }
+      function startFree(id){
+        if(active)return;
+        var at=state.findIndex(function(b){return b.id===id;});
+        if(at<0||state[at].kind!=="used")return;
+        var selected=state[at],prev=at>0?state[at-1]:null,next=at+1<state.length?state[at+1]:null;
+        var hasPrev=!!prev&&prev.kind==="free",hasNext=!!next&&next.kind==="free";
+        var pending=withKind(state,at,"pending"),afterPrev=cloneBlocks(state);
+        var mergedId=selected.id,mergedSize=selected.size,selectedIndex=at;
+        if(hasPrev){
+          mergedId=prev.id;mergedSize=prev.size+HEADER+selected.size;
+          afterPrev[at-1]={id:mergedId,label:prev.label,kind:"detached",size:mergedSize,detached:true};
+          afterPrev.splice(at,1);selectedIndex=at-1;
+        }else afterPrev[at].kind="pending";
+        var afterNext=cloneBlocks(afterPrev);
+        if(hasNext){
+          var rightIndex=selectedIndex+1;
+          if(rightIndex<afterNext.length&&afterNext[rightIndex].kind==="free"){
+            afterNext[selectedIndex].size+=HEADER+afterNext[rightIndex].size;
+            afterNext[selectedIndex].kind="detached";afterNext[selectedIndex].detached=true;afterNext.splice(rightIndex,1);
+          }else hasNext=false;
+        }
+        var finalBlocks=cloneBlocks(afterNext),finalIndex=finalBlocks.findIndex(function(b){return b.id===mergedId;});
+        finalBlocks[finalIndex].kind="free";finalBlocks[finalIndex].detached=false;
+        var steps=[
+          {title:"标记当前块为空闲",body:selected.label+" 的空闲状态位置位；块头中的“前块空闲”标记为后续检查提供线索。",verb:"MARK FREE"},
+          {title:"检查前一物理块",body:hasPrev?"前一块 "+prev.label+" 也是空闲块。TLSF 可通过当前块头里的前块空闲标记找到它。":"前一物理块 "+(prev?prev.label:"不存在")+" 正在使用；保留当前块作为合并起点。",verb:"CHECK LEFT"},
+          {title:hasPrev?"摘除前块并向左合并":"跳过左侧合并",body:hasPrev?prev.label+" 先从原分类链表摘除，再与 "+selected.label+" 合为 "+mergedSize+" B；原分类位图随空链表清除。":"左邻块不是空闲块，不修改它的链表。",verb:hasPrev?"MERGE LEFT":"LEFT BUSY"},
+          {title:"检查后一物理块",body:hasNext?"合并起点右侧的 "+next.label+" 为空闲块，继续检查并合并。":"后一物理块 "+(next?next.label:"是池末哨兵")+" 不可合并；哨兵将遍历限制在本池内。",verb:"CHECK RIGHT"},
+          {title:hasNext?"摘除后块并向右合并":"保留当前合并结果",body:hasNext?"先从 "+next.label+" 的空闲链表摘除，再吸收它的块体，避免留下相邻空闲块。":"没有空闲的右邻块，合并结果保持不变。",verb:hasNext?"MERGE RIGHT":"RIGHT BUSY"},
+          {title:"插入最终空闲块",body:"将 "+selected.label+(hasPrev||hasNext?" 与相邻空闲块合并后":"")+" 的 "+finalBlocks[finalIndex].size+" B 结果映射到新 FL / SL，只插入一次并更新位图。",verb:"INSERT ONCE"}
+        ];
+        active={type:"free",cursor:-1,baseline:cloneBlocks(state),result:finalBlocks,selectedId:selected.id,mergedId:mergedId,target:mappingInsert(selected.size),steps:steps,states:[cloneBlocks(pending),cloneBlocks(pending),cloneBlocks(afterPrev),cloneBlocks(afterPrev),cloneBlocks(afterNext),cloneBlocks(finalBlocks)],summary:"free("+selected.label+")；"+(hasPrev&&hasNext?"向两侧合并为 "+finalBlocks[finalIndex].size+" B。":hasPrev||hasNext?"与一侧空闲块合并为 "+finalBlocks[finalIndex].size+" B。":"插入 "+selected.size+" B 空闲块。")};
+        render();
+      }
+      function advance(){
+        if(!active){stopTimer();return;}
+        active.cursor+=1;
+        if(active.cursor>=active.steps.length)active.cursor=active.steps.length-1;
+        state=cloneBlocks(active.states[active.cursor]);
+        if(active.cursor===active.steps.length-1){state=cloneBlocks(active.result);lastMessage=active.summary;active=null;stopTimer();}
+        render();
+      }
+      function goBack(){if(!active||active.cursor<0)return;active.cursor-=1;state=cloneBlocks(active.cursor<0?active.baseline:active.states[active.cursor]);render();}
+      function togglePlay(){
+        if(!active){startAllocation();if(!active)return;}
+        if(timer){stopTimer();render();return;}
+        timer=window.setInterval(advance,Number($("speedSelect").value));render();
+      }
+      function renderPool(){
+        var total=state.reduce(function(sum,b){return sum+b.size+HEADER;},0)+HEADER;
+        $("poolMeta").textContent=state.length+" 个物理块 · 示例跨度 "+total+" B";
+        var focused=active?(active.type==="alloc"?active.candidateId:active.selectedId):"";
+        var mergedFocus=active&&active.type==="free"?active.mergedId:"";
+        $("poolBlocks").innerHTML=state.map(function(b){
+          var classes="mem-block "+b.kind;
+          if(b.id===focused)classes+=" focus";
+          if(b.id===mergedFocus&&active&&active.type==="free")classes+=" coalesce-focus";
+          var title=b.label+" · "+b.size+" B · "+(b.kind==="free"?"空闲":b.kind==="used"?"已分配":b.kind==="pending"?"待释放":"已摘链/合并中");
+          return'<div class="'+classes+'" style="flex-grow:'+Math.max(b.size+HEADER,12)+'" title="'+title+'"><span class="block-name">'+b.label+'</span><span class="block-size">'+b.size+' B</span></div>';
+        }).join("")+'<div class="sentinel" title="池末尾的零大小已用哨兵">哨兵</div>';
+        $("poolBlocks").setAttribute("aria-label",state.map(function(b){return b.label+" "+b.size+" 字节 "+b.kind;}).join("，")+"，池末哨兵");
+      }
+      function renderStats(){
+        var used=state.filter(function(b){return b.kind==="used";}),free=state.filter(function(b){return b.kind==="free"&&!b.detached;});
+        var largest=free.reduce(function(max,b){return Math.max(max,b.size);},0),totalFree=free.reduce(function(sum,b){return sum+b.size;},0);
+        $("usedCount").textContent=String(used.length);$("freeCount").textContent=String(free.length);$("freeTotal").textContent=totalFree+" B";$("largestFree").textContent=largest+" B";
+        $("allocatedPills").innerHTML=used.length?used.map(function(b){return'<button type="button" class="alloc-pill" data-free-id="'+b.id+'" title="释放 '+b.label+'">释放 '+b.label+' · '+b.size+' B</button>';}).join(""):'<span class="alloc-empty">当前没有已分配块</span>';
+        Array.prototype.forEach.call($("allocatedPills").querySelectorAll("[data-free-id]"),function(button){button.addEventListener("click",function(){startFree(button.getAttribute("data-free-id"));});});
+      }
+      function renderBitmaps(probe){
+        var bins=binsFor(state),rows={};
+        Object.keys(bins).forEach(function(key){rows[bins[key].index.fl]=true;});
+        rows[probe.mapped.index.fl]=true;if(probe.candidateIndex)rows[probe.candidateIndex.fl]=true;
+        var fls=Object.keys(rows).map(Number).sort(function(a,b){return a-b;});
+        $("bitmaps").innerHTML=fls.map(function(fl){
+          var cells="";
+          for(var sl=0;sl<SL_COUNT;sl++){
+            var bin=bins[fl+":"+sl],cls="bit"+(bin?" on":"");
+            if(probe.mapped.index.fl===fl&&probe.mapped.index.sl===sl)cls+=" target";
+            if(probe.candidateIndex&&probe.candidateIndex.fl===fl&&probe.candidateIndex.sl===sl&&bin)cls+=" candidate";
+            cells+='<span class="'+cls+'" title="'+displayFL(fl)+' · SL '+sl+(bin?" · "+bin.blocks.length+" 个空闲块":" · 空")+'"></span>';
+          }
+          return'<div class="bitmap-row"><span class="bitmap-label">'+(fl===0?"FL 0 <256":"FL "+fl)+'</span><div class="bits" aria-label="'+displayFL(fl)+' 的 32 位二级位图">'+cells+'</div></div>';
+        }).join("");
+      }
+      function renderFreeLists(probe){
+        var bins=binsFor(state),keys=Object.keys(bins).sort(function(left,right){var a=bins[left].index,b=bins[right].index;return a.fl-b.fl||a.sl-b.sl;});
+        if(!keys.length){$("freeLists").innerHTML='<span class="alloc-empty">空闲链表均为空</span>';return;}
+        $("freeLists").innerHTML=keys.map(function(key){
+          var bin=bins[key],focus=sameIndex(bin.index,probe.mapped.index)?" focus":"";
+          var members=bin.blocks.map(function(item){return item.block.label+" · "+item.block.size+" B";}).join("、");
+          return'<div class="free-bin'+focus+'"><div class="free-bin-head">FL '+bin.index.fl+' / SL '+bin.index.sl+'</div><div class="free-bin-items">'+members+'</div></div>';
+        }).join("");
+      }
+      function renderProbe(){
+        var probe=requestProbe();
+        if(!probe.invalid&&active&&active.type==="alloc"){
+          probe.candidate=active.baseline.find(function(b){return b.id===active.candidateId;})||null;
+          probe.candidateIndex=active.hit;
+        }
+        if(probe.invalid){$("probeResult").innerHTML='<div class="probe-cell"><span>请求值</span><b>无效</b></div><div class="probe-cell"><span>FL / SL</span><b>—</b></div><div class="probe-cell"><span>候选块</span><b>—</b></div>'; $("probeNote").textContent="输入一个大于 0 的字节数。";return;}
+        var target="FL"+probe.mapped.index.fl+" / SL"+probe.mapped.index.sl,hit=probe.candidate?"FL"+probe.candidateIndex.fl+" / SL"+probe.candidateIndex.sl:"无可用分类";
+        $("probeResult").innerHTML='<div class="probe-cell"><span>对齐后</span><b>'+probe.adjusted+' B</b></div><div class="probe-cell active"><span>起始分类</span><b>'+target+'</b></div><div class="probe-cell"><span>预计命中</span><b>'+(probe.candidate?probe.candidate.label+" · "+hit:"NULL")+'</b></div>';
+        $("probeNote").textContent=probe.adjusted<SMALL?"小块走 FL 0 线性分档：每格 "+ALIGN+" B。":"大块先按最高位选 FL，再按该数量级内的位置选 SL；搜索映射向上取整。";
+        renderBitmaps(probe);renderFreeLists(probe);
+      }
+      function renderTimeline(){
+        var current=active&&active.cursor>=0?active.steps[active.cursor]:null;
+        if(!active){
+          $("stageCount").textContent="READY";$("stageVerb").textContent="等待操作";
+          $("stageTitle").textContent=lastMessage.indexOf("NULL")>=0?"请求暂时无法满足":"从请求大小开始";
+          $("stageBody").textContent=lastMessage;$("timeline").innerHTML="";return;
+        }
+        if(!current){$("stageCount").textContent="0 / "+active.steps.length;$("stageVerb").textContent=active.type==="alloc"?"MALLOC":"FREE";$("stageTitle").textContent=active.type==="alloc"?"准备处理分配请求":"准备释放已分配块";$("stageBody").textContent="按“下一步”推进，或开始自动演示。";}
+        else{$("stageCount").textContent=(active.cursor+1)+" / "+active.steps.length;$("stageVerb").textContent=current.verb;$("stageTitle").textContent=current.title;$("stageBody").textContent=current.body;}
+        $("timeline").innerHTML=active.steps.map(function(_,index){var cls=index<active.cursor?"past":index===active.cursor?"current":"";return'<i class="'+cls+'"></i>';}).join("");
+      }
+      function renderControls(){
+        var running=!!active;
+        $("allocateButton").disabled=running;$("requestSize").disabled=running;
+        $("releaseXButton").disabled=running||!state.some(function(block){return block.id==="X"&&block.kind==="used";});
+        $("backButton").disabled=!running||active.cursor<0||!!timer;$("nextButton").disabled=!running||!!timer;
+        $("playButton").textContent=timer?"Ⅱ 暂停播放":running?"▶ 继续播放":"▶ 自动演示";
+      }
+      var placement="combined",initCursor=-1,initTimer=null;
+      var initSteps=[
+        {title:"调用方划出可写内存",body:"应用提供地址和容量，并保证起始地址满足 tlsf_align_size()。TLSF 不申请或扩展这段内存。"},
+        {title:"构造 control_t",body:"tlsf_create() 清空 FL 位图、每个 FL 的 SL 位图，并将分类链表头指向空链表哨兵。"},
+        {title:"确定 pool 所在范围",body:"同一段内存模式会把控制结构之后的尾部交给 tlsf_add_pool()；分离模式则由调用方另给 pool 地址和容量。"},
+        {title:"预留 pool 元数据开销",body:"tlsf_add_pool() 从容量中扣除一个空闲块头和末尾哨兵的开销，再按 8 B 向下对齐池内可用尺寸。"},
+        {title:"建立初始空闲块与哨兵",body:"整个 pool 起初是一块空闲块，按大小映射后加入 FL/SL 链表并设置位图；末尾放置 size=0 的已用哨兵。"}
+      ];
+      function formatKiB(bytes){return(bytes/1024).toFixed(bytes%1024===0?0:1)+" KiB";}
+      function renderPoolSetup(){
+        var supplied=Number($("poolBytes").value),control=CONTROL_BYTES,pool=placement==="combined"?supplied-control:supplied;
+        var free=Math.max(0,Math.floor((pool-16)/8)*8),fits=pool>=40;
+        $("poolBytesText").textContent=formatKiB(supplied);
+        $("poolRangeLabel").textContent=placement==="combined"?"调用方提供的总缓冲区":"调用方提供的 pool 容量";
+        $("poolFitBadge").textContent=fits?"容量可用":"容量不足";
+        $("poolFitBadge").className="fit-badge"+(fits?"":" warn");
+        $("poolSetupNote").textContent=placement==="combined"
+          ?"tlsf_create_with_pool() 在缓冲区开头放 control_t，再把尾部作为初始 pool；控制区实际大小应查询 tlsf_size()。"
+          :"tlsf_create() 初始化单独的控制结构，随后 tlsf_add_pool() 将另一段对齐区域纳入同一管理器。";
+        var ctlFocus=initCursor===1, poolFocus=initCursor>=2;
+        var blockNullBytes=3*TLSF_PTR_BYTES+TLSF_SIZE_BYTES,slBitmapBytes=TLSF_FL_COUNT*TLSF_UINT_BYTES,headsBytes=TLSF_FL_COUNT*SL_COUNT*TLSF_PTR_BYTES;
+        $("controlFormula").innerHTML='<b>control_t 字段合计 · '+control+' B（当前 64 位配置）</b><code>block_null '+blockNullBytes+' + fl_bitmap '+TLSF_UINT_BYTES+' + sl_bitmap['+TLSF_FL_COUNT+'] '+slBitmapBytes+' + blocks['+TLSF_FL_COUNT+']['+SL_COUNT+'] '+headsBytes+' = '+control+' B</code><br>等于 sizeof(control_t)，由 tlsf_size() 返回。';
+        var controlSeg='<div class="diagram-segment control'+(ctlFocus?" focus":"")+'" style="flex-grow:'+control+'">control_t · '+control+' B</div>';
+        var freeSeg='<div class="diagram-segment free'+(poolFocus?" focus":"")+'" style="flex-grow:'+Math.max(free,2)+'">初始空闲块 · '+free+' B</div>';
+        var overheadSeg='<div class="diagram-segment overhead'+(poolFocus?" focus":"")+'" title="tlsf_pool_overhead() = 16 B（空闲块头与哨兵头）">16 B</div>';
+        if(placement==="combined"){
+          $("poolDiagram").innerHTML='<div><div class="diagram-label"><span>同一缓冲区 · 低地址 → 高地址</span><span>tlsf_create_with_pool()</span></div><div class="diagram-track">'+controlSeg+freeSeg+overheadSeg+'</div></div>';
+        }else{
+          $("poolDiagram").innerHTML='<div><div class="diagram-label"><span>独立的管理结构</span><span>tlsf_create()</span></div><div class="diagram-track">'+controlSeg+'</div></div><div><div class="diagram-label"><span>调用方的 pool 区域</span><span>tlsf_add_pool()</span></div><div class="diagram-track">'+freeSeg+overheadSeg+'</div></div>';
+        }
+        $("poolSetupNumbers").innerHTML='<div class="setup-number"><b>'+formatKiB(supplied)+'</b><span>'+(placement==="combined"?"输入缓冲区":"pool 容量")+'</span></div><div class="setup-number"><b>'+control+' B</b><span>control_t · tlsf_size()</span></div><div class="setup-number"><b>'+free+' B</b><span>初始空闲块体</span></div>';
+        var placementButtons=document.querySelectorAll("[data-placement]");
+        Array.prototype.forEach.call(placementButtons,function(button){button.classList.toggle("selected",button.getAttribute("data-placement")===placement);});
+        var current=initCursor>=0?initSteps[initCursor]:null;
+        $("initStepCount").textContent=current?(initCursor+1)+" / "+initSteps.length:"READY";
+        $("initStepTitle").textContent=current?current.title:"内存由调用方掌控";
+        $("initStepBody").textContent=current?current.body:"选择布局方式，再单步观察 tlsf_create、control_construct 和 tlsf_add_pool 如何把一段缓冲区变成可分配内存。";
+        $("initTimeline").innerHTML=initSteps.map(function(_,i){return'<i class="'+(i<initCursor?"past":i===initCursor?"current":"")+'"></i>';}).join("");
+        $("initBack").disabled=initCursor<0||!!initTimer;
+        $("initNext").disabled=initCursor>=initSteps.length-1||!!initTimer;
+        $("initPlay").textContent=initTimer?"Ⅱ 暂停":"▶ 自动演示";
+      }
+      function stepInit(){
+        if(initCursor<initSteps.length-1)initCursor++;
+        renderPoolSetup();
+        if(initCursor===initSteps.length-1&&initTimer){window.clearInterval(initTimer);initTimer=null;renderPoolSetup();}
+      }
+      function toggleInitPlay(){
+        if(initTimer){window.clearInterval(initTimer);initTimer=null;renderPoolSetup();return;}
+        if(initCursor>=initSteps.length-1)initCursor=-1;
+        initTimer=window.setInterval(stepInit,1100);renderPoolSetup();
+      }
+
+      var apiMode="shrink",apiIndex=0,apiTimer=null;
+      var apiScenarios={
+        shrink:{
+          label:"原地收缩",
+          caption:"P 原地址返回。收缩切出的 24 B 尾块与原本空闲的 N 合并，最终作为一个 192 B 空闲块重新入链。",
+          steps:[
+            {title:"当前块容量为 96 B",body:"realloc(P, 64) 的对齐结果是 64 B。原块已足够大，不需要申请新块。",blocks:[["P",96,"used",true],["N",160,"free"],["Q",96,"used"]]},
+            {title:"切出 24 B 尾部",body:"block_trim_used() 检查尾部是否能容纳块头与最小空闲块；这里刚好满足条件。",blocks:[["P",64,"used",true],["T",24,"pending"],["N",160,"free"],["Q",96,"used"]]},
+            {title:"与后继空闲块合并",body:"新尾块后面已经有 N 空闲，先合并，避免留下相邻空闲块；最后将 192 B 结果插入分类表。",blocks:[["P",64,"used",true],["R",192,"free",true],["Q",96,"used"]]},
+            {title:"返回原指针",body:"P 的地址不变；只有尾部空闲空间和相应 FL/SL 链表发生变化。",blocks:[["P",64,"used",true],["R",192,"free"],["Q",96,"used"]]}
+          ]
+        },
+        grow:{
+          label:"利用后继块原地扩展",
+          caption:"TLSF 只检查后一物理块。合并后若新尾部可形成合法块，就切分并把余量插入链表。",
+          steps:[
+            {title:"观察当前块与后继块",body:"P 为 96 B，后一块 N 是 160 B 空闲；realloc 请求 200 B。",blocks:[["P",96,"used",true],["N",160,"free",true],["Q",96,"used"]]},
+            {title:"合并后继空闲块",body:"96 + 8 B 头部 + 160 = 264 B，可满足对齐后的 200 B 请求。先从 N 的分类链表摘除再吸收。",blocks:[["P",264,"used",true],["Q",96,"used"]]},
+            {title:"切分多余尾部",body:"264 B 再切为 200 B 已用块和 56 B 空闲块；P 指针保持不变。",blocks:[["P",200,"used",true],["R",56,"free",true],["Q",96,"used"]]},
+            {title:"更新余量分类",body:"56 B 余量按实际大小映射到自己的 FL/SL 链表，并设置对应位图。",blocks:[["P",200,"used"],["R",56,"free",true],["Q",96,"used"]]}
+          ]
+        },
+        move:{
+          label:"申请新块并搬迁",
+          caption:"当原块加后一块都不够时，分配新块、复制较小的旧容量与新请求长度，再释放旧块。memcpy 的成本与复制字节数有关。",
+          steps:[
+            {title:"原地扩展条件不满足",body:"P 后面是正在使用的 Q；不能合并。realloc 退回 tlsf_malloc() 搜索新块。",blocks:[["P",96,"used",true],["Q",96,"used",true],["F",320,"free"]]},
+            {title:"新块从 F 中切分",body:"申请 220 B，对齐后为 224 B；命中 320 B 空闲块，留下 88 B 尾部余量。旧 P 暂时仍保持有效。",blocks:[["P",96,"used"],["Q",96,"used"],["P2",224,"focus",true],["R",88,"free"]]},
+            {title:"复制旧内容",body:"复制 min(旧容量 96 B, 新请求 220 B) = 96 B。新增加的区域内容未定义。",blocks:[["P",96,"pending"],["Q",96,"used"],["P2",224,"focus",true],["R",88,"free"]]},
+            {title:"释放旧块并返回新指针",body:"复制成功后释放旧 P；它的邻块 Q 在使用，所以此处不会合并。分配失败时旧块不会被释放。",blocks:[["P",96,"free"],["Q",96,"used"],["P2",224,"used",true],["R",88,"free"]]},
+            {title:"新地址生效",body:"调用方应使用 P2。成功搬迁后，TLSF 才释放旧地址 P。",blocks:[["P",96,"free"],["Q",96,"used"],["P2",224,"used"],["R",88,"free"]]}
+          ]
+        },
+        align:{label:"对齐分配",caption:"memalign 会额外预留对齐空隙和块头空间。若首个对齐地址产生的前缀太小，就移动到下一个可表示边界。"}
+      };
+      function alignScenario(){
+        var alignment=Number($("alignValue").value),request=Math.max(1,Number($("alignRequest").value)||80),adjust=adjustedSize(request);
+        var base=8,aligned=Math.ceil(base/alignment)*alignment,gap=aligned-base,shifted=false;
+        if(gap&&gap<32){var remain=32-gap,offset=Math.max(remain,alignment);aligned=Math.ceil((aligned+offset)/alignment)*alignment;gap=aligned-base;shifted=true;}
+        var reserve=alignUp(adjust+alignment+32,alignment),fits=reserve<=480&&gap+adjust+16<=480;
+        var tail=Math.max(24,480-gap-adjust-16);
+        var before=[["F0",480,"free",true]];
+        var after=[["prefix",gap,"free",false],["P1",adjust,"used",true],["tail",tail,"free",false]];
+        var prefixText=gap+" B 前缀";
+        return{
+          label:"对齐到 "+alignment+" B",
+          caption:"候选空闲块为 480 B；memalign(align, "+request+") 先为对齐间隙预留额外空间。下图按概念跨度绘制，实际实现还会计入块头。",
+          steps:[
+            {title:"预留额外搜索空间",body:"请求调整为 "+adjust+" B；搜索时额外预留 align "+alignment+" B 与块头空间，候选需满足约 "+reserve+" B。",blocks:before},
+            {title:"计算首个对齐地址",body:"假设候选载荷起点偏移 8 B。首个对齐地址产生 "+gap+" B 前缀空隙。",blocks:before},
+            {title:shifted?"跳过过小前缀":"前缀已能表示为空闲块",body:shifted?"最初空隙小于 sizeof(block_header_t)=32 B，代码移动到下一个对齐位置，得到 "+gap+" B 前缀。":"该前缀已达到块头的最小空间，可切回空闲链表。",blocks:fits?after:before},
+            {title:"切出前缀并对齐载荷",body:fits?prefixText+" 保持为空闲块；P1 从满足对齐的地址开始，载荷大小为 "+adjust+" B。":"该候选块不足以容纳请求和对齐预留，实际分配会继续查找更大的分类。",blocks:fits?after:before},
+            {title:"登记前缀与尾部余量",body:fits?"前缀与尾部各自按大小映射并插入空闲分类；已分配指针满足 "+alignment+" B 对齐。":"示意池中的 480 B 不足；不会返回未满足对齐要求的指针。",blocks:fits?after:before}
+          ]
+        };
+      }
+      function apiCurrent(){
+        if(apiMode==="align")return alignScenario();
+        return apiScenarios[apiMode];
+      }
+      function renderApi(){
+        var scenario=apiCurrent(),step=scenario.steps?scenario.steps[apiIndex]:null;
+        var tabs=document.querySelectorAll("[data-api]");
+        Array.prototype.forEach.call(tabs,function(tab){tab.classList.toggle("active",tab.getAttribute("data-api")===apiMode);});
+        $("alignOptions").hidden=apiMode!=="align";
+        $("apiSceneLabel").textContent=scenario.label;
+        if(!scenario.steps){$("apiTrack").innerHTML="";return;}
+        if(apiIndex>=scenario.steps.length)apiIndex=scenario.steps.length-1;
+        step=scenario.steps[apiIndex];
+        $("apiTrack").innerHTML=step.blocks.map(function(block){
+          var cls="api-block "+block[2]+(block[3]?" focus":"");
+          return'<div class="'+cls+'" style="flex-grow:'+Math.max(block[1]+8,12)+'" title="'+block[0]+" · "+block[1]+' B"><span class="block-name">'+block[0]+'</span><span class="block-size">'+block[1]+' B</span></div>';
+        }).join("");
+        $("apiTrack").setAttribute("aria-label",step.blocks.map(function(b){return b[0]+" "+b[1]+" 字节 "+b[2];}).join("，"));
+        $("apiStepCount").textContent="STEP "+(apiIndex+1)+" / "+scenario.steps.length;
+        $("apiStepTitle").textContent=step.title;
+        $("apiStepBody").textContent=step.body;
+        $("apiCaption").textContent=scenario.caption;
+        $("apiBack").disabled=apiIndex===0||!!apiTimer;
+        $("apiNext").disabled=apiIndex>=scenario.steps.length-1||!!apiTimer;
+        $("apiPlay").textContent=apiTimer?"Ⅱ 暂停":"▶ 自动演示";
+      }
+      function selectApi(mode){if(apiTimer){window.clearInterval(apiTimer);apiTimer=null;}apiMode=mode;apiIndex=0;renderApi();}
+      function advanceApi(){
+        var steps=apiCurrent().steps;
+        if(apiIndex<steps.length-1)apiIndex++;
+        renderApi();
+        if(apiIndex>=steps.length-1&&apiTimer){window.clearInterval(apiTimer);apiTimer=null;renderApi();}
+      }
+      function toggleApiPlay(){
+        if(apiTimer){window.clearInterval(apiTimer);apiTimer=null;renderApi();return;}
+        if(apiIndex>=apiCurrent().steps.length-1)apiIndex=0;
+        apiTimer=window.setInterval(advanceApi,1000);renderApi();
+      }
+      function refreshAlignScenario(){
+        if(apiTimer){window.clearInterval(apiTimer);apiTimer=null;}
+        apiIndex=0;renderApi();
+      }
+
+      var multiActive=false,multiXUsed=true,layoutMode="used",flagCurrentFree=false,flagPrevFree=true;
+      function miniBlock(label,size,kind){
+        return'<div class="diagram-segment '+kind+'" style="flex-grow:'+(size+8)+'">'+label+' · '+size+' B</div>';
+      }
+      function renderMultiPools(){
+        var rows='<div class="mini-pool"><div class="mini-pool-head"><span>Pool A · 独立物理区域</span><span>哨兵</span></div><div class="mini-pool-track">'+miniBlock("FA",256,"free")+'<div class="sentinel">哨兵</div></div></div>';
+        if(multiActive){
+          var right=multiXUsed?miniBlock("FB",160,"free"): "";
+          var left=multiXUsed?miniBlock("X",96,"used"):miniBlock("FB",264,"free");
+          rows+='<div class="mini-pool"><div class="mini-pool-head"><span>Pool B · 独立物理区域</span><span>哨兵</span></div><div class="mini-pool-track">'+left+right+'<div class="sentinel">哨兵</div></div></div>';
+        }
+        $("multiPools").innerHTML=rows;
+        var freeItems=[{label:"FA",size:256}];
+        if(multiActive)freeItems.push({label:"FB",size:multiXUsed?160:264});
+        $("multiBins").innerHTML=freeItems.map(function(item){var ix=mappingInsert(item.size);return'<span class="shared-bin">FL '+ix.fl+' / SL '+ix.sl+' <b>'+item.label+'</b> '+item.size+' B</span>';}).join("");
+        $("multiAdd").disabled=multiActive;
+        $("multiRelease").disabled=!multiActive||!multiXUsed;
+        $("multiRemove").disabled=!multiActive||multiXUsed;
+        if(!multiActive)$("multiStatus").textContent="Pool A 已加入控制结构；Pool B 尚未加入。";
+        else if(multiXUsed)$("multiStatus").textContent="A、B 的空闲块进入共享分类表；B 仍有已分配 X，不能移除。";
+        else $("multiStatus").textContent="B 现在只剩一个空闲块和哨兵，可以从分类链表摘除并移除该 pool。";
+      }
+      function renderHeaderLayout(){
+        var current=flagCurrentFree,prev=flagPrevFree;
+        $("headerLayout").innerHTML='<div class="header-field"><b>prev_phys_block</b><span>'+(prev?"前块空闲时有效；回链存于前块尾部":"前块正在使用；该回链字段无效")+'</span></div><div class="header-field flags"><b>size + 状态位</b><span>对齐尺寸的低位承载标志</span><div class="bit-strip"><i class="bit-chip '+(current?"on":"")+'">bit 0 · 当前'+(current?"空闲":"已用")+'</i><i class="bit-chip '+(prev?"on":"")+'">bit 1 · 前块'+(prev?"空闲":"已用")+'</i></div></div><div class="header-field payload"><b>'+(current?"next_free / prev_free":"用户载荷")+'</b><span>'+(current?"仅空闲块使用；链表指针覆盖载荷起始部分":"已分配时，载荷由调用方使用")+'</span></div>';
+        $("flagBits").innerHTML='<span class="bit-chip">size = 对齐后的块尺寸</span><span class="bit-chip '+(current?"on":"")+'">bit 0 = '+(current?"1（free）":"0（used）")+'</span><span class="bit-chip '+(prev?"on":"")+'">bit 1 = '+(prev?"1（prev free）":"0（prev used）")+'</span>';
+        $("headerNote").textContent="当前块状态："+(current?"空闲":"已分配")+"；前一物理块："+(prev?"空闲":"已分配")+"。TLSF 通过当前块的 prev-free 位判断是否读取前块回链；末尾哨兵是 size=0 的已用块。";
+        Array.prototype.forEach.call(document.querySelectorAll("[data-layout]"),function(button){button.classList.toggle("selected",button.getAttribute("data-layout")===layoutMode);});
+        $("currentFlagButton").classList.toggle("selected",current);
+        $("prevFlagButton").classList.toggle("selected",prev);
+      }
+      function renderFragment(){
+        if(!$("fragTotal"))return;
+        var free=fragmentState.filter(function(b){return b.kind==="free"&&!b.detached;});
+        var total=free.reduce(function(sum,b){return sum+b.size;},0),largest=free.reduce(function(max,b){return Math.max(max,b.size);},0);
+        var request=adjustedSize(360);
+        $("fragRequest").textContent=request+" B";$("fragTotal").textContent=total+" B";$("fragLargest").textContent=largest+" B";$("fragCount").textContent=String(free.length);
+        var labels=["初始布局","请求失败 · 状态不变","释放 X · 合并完成","请求成功 · 切分完成"];
+        var captions=["点击第 1 步，尝试申请 360 B","688 B 总空闲量够，但 320 B 最大块不够；malloc 返回 NULL","释放 X 后，F1 + 8 + X + 8 + F2 合并为 480 B","从 480 B 中切出 360 B；余下 112 B，池内仍有其他分散空闲块"];
+        $("fragmentStageLabel").textContent=labels[fragmentStage];$("fragmentSceneCaption").textContent=captions[fragmentStage];
+        $("fragmentTrack").innerHTML=fragmentState.map(function(block){
+          var classes="mem-block "+block.kind;
+          if((fragmentStage===2&&block.id==="M")||(fragmentStage===3&&block.id==="P3"))classes+=" focus";
+          return'<div class="'+classes+'" style="flex-grow:'+Math.max(block.size+HEADER,12)+'" title="'+block.label+" · "+block.size+' B"><span class="block-name">'+block.label+'</span><span class="block-size">'+block.size+' B</span></div>';
+        }).join("")+'<div class="sentinel" title="pool 末尾哨兵">哨兵</div>';
+        $("fragmentTrack").setAttribute("aria-label",fragmentState.map(function(block){return block.label+" "+block.size+" 字节 "+block.kind;}).join("，")+"，池末哨兵");
+        var verdict;
+        if(fragmentStage===0)verdict="初始状态：空闲总量 688 B，最大连续块 320 B。第 1 步会尝试 360 B 请求；此沙盘与第 2 部分状态独立。";
+        else if(fragmentStage===1)verdict="分配失败：688 B 总空闲量虽然大于 360 B，但最大连续块只有 320 B，tlsf_malloc() 返回 NULL，内存布局保持不变。";
+        else if(fragmentStage===2)verdict="释放 X 后：128 + 8 + 96 + 8 + 240 = 480 B。现在最大连续块为 480 B，重试 360 B 可以成功。";
+        else verdict="分配成功：从 480 B 连续块切出 360 B 已分配块和 112 B 余量。当前最大空闲块为 320 B，再请求 360 B 仍会失败。";
+        $("fragmentVerdict").textContent=verdict;
+        $("fragmentVerdict").classList.toggle("ok",fragmentStage===2||fragmentStage===3);
+        $("fragmentFailButton").disabled=fragmentStage!==0;
+        $("fragmentReleaseButton").disabled=fragmentStage!==1;
+        $("fragmentRetryButton").disabled=fragmentStage!==2;
+        $("fragmentResetButton").disabled=fragmentStage===0;
+      }
+
+      function render(){
+        renderPool();renderStats();renderProbe();renderTimeline();renderControls();
+      }
+      $("allocateButton").addEventListener("click",startAllocation);
+      $("nextButton").addEventListener("click",advance);
+      $("backButton").addEventListener("click",goBack);
+      $("playButton").addEventListener("click",togglePlay);
+      $("releaseXButton").addEventListener("click",function(){startFree("X");});
+      $("resetButton").addEventListener("click",reset);
+      $("requestSize").addEventListener("input",function(){if(!active)render();});
+      $("requestSize").addEventListener("keydown",function(event){if(event.key==="Enter"&&!active)startAllocation();});
+      $("speedSelect").addEventListener("change",function(){if(timer){stopTimer();timer=window.setInterval(advance,Number($("speedSelect").value));renderControls();}});
+      Array.prototype.forEach.call(document.querySelectorAll("[data-placement]"),function(button){button.addEventListener("click",function(){placement=button.getAttribute("data-placement");renderPoolSetup();});});
+      $("poolBytes").addEventListener("input",renderPoolSetup);
+      $("initNext").addEventListener("click",stepInit);
+      $("initBack").addEventListener("click",function(){if(initCursor>0)initCursor--;else initCursor=-1;renderPoolSetup();});
+      $("initPlay").addEventListener("click",toggleInitPlay);
+      $("initReset").addEventListener("click",function(){if(initTimer){window.clearInterval(initTimer);initTimer=null;}initCursor=-1;renderPoolSetup();});
+      $("fragmentFailButton").addEventListener("click",startFragmentChallenge);
+      $("fragmentReleaseButton").addEventListener("click",releaseFragmentX);
+      $("fragmentRetryButton").addEventListener("click",retryFragmentAllocation);
+      $("fragmentResetButton").addEventListener("click",resetFragment);
+      Array.prototype.forEach.call(document.querySelectorAll("[data-api]"),function(tab){tab.addEventListener("click",function(){selectApi(tab.getAttribute("data-api"));});});
+      $("apiBack").addEventListener("click",function(){if(apiIndex>0)apiIndex--;renderApi();});
+      $("apiNext").addEventListener("click",advanceApi);
+      $("apiPlay").addEventListener("click",toggleApiPlay);
+      $("alignValue").addEventListener("change",function(){if(apiMode==="align")refreshAlignScenario();});
+      $("alignRequest").addEventListener("input",function(){if(apiMode==="align")refreshAlignScenario();});
+      $("multiAdd").addEventListener("click",function(){multiActive=true;multiXUsed=true;renderMultiPools();});
+      $("multiRelease").addEventListener("click",function(){if(multiActive&&multiXUsed){multiXUsed=false;renderMultiPools();}});
+      $("multiRemove").addEventListener("click",function(){if(multiActive&&!multiXUsed){multiActive=false;multiXUsed=true;renderMultiPools();}});
+      Array.prototype.forEach.call(document.querySelectorAll("[data-layout]"),function(button){button.addEventListener("click",function(){layoutMode=button.getAttribute("data-layout");flagCurrentFree=layoutMode==="free";renderHeaderLayout();});});
+      $("currentFlagButton").addEventListener("click",function(){flagCurrentFree=!flagCurrentFree;layoutMode=flagCurrentFree?"free":"used";renderHeaderLayout();});
+      $("prevFlagButton").addEventListener("click",function(){flagPrevFree=!flagPrevFree;renderHeaderLayout();});
+      renderPoolSetup();renderApi();renderMultiPools();renderHeaderLayout();resetFragment();
+      reset();
+    }());
+  </script>
+</body>
+</html>
